@@ -2,7 +2,7 @@ import fitz
 import json
 
 doc = fitz.open("Title.pdf")
-book_content = []  
+book_content = []
 
 for page_num, page in enumerate(doc):
     blocks = page.get_text("dict")["blocks"]
