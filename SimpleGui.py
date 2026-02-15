@@ -1,5 +1,10 @@
-import tkinter as tk
-from tkinter import font as tkfont
+import tkinter as tk                   # Core GUI library
+from tkinter import filedialog         # For the "Open File" window
+
+# --- External Libraries (Need to be installed) ---
+import ebooklib
+from ebooklib import epub              # For parsing .epub files
+from bs4 import BeautifulSoup          # For cleaning HTML tags out of the EPUB
 
 class BookWormApp(tk.Tk):
     def __init__(self):
@@ -65,15 +70,76 @@ class RequestPage(tk.Frame):
                              command=lambda: controller.show_frame("StartPage"))
         back_btn.pack()
 
+
 class ReadPage(tk.Frame):
     def __init__(self, parent, controller):
-        super().__init__(parent, bg="khaki")
-        label = tk.Label(self, text="Reading Room", font=("Arial", 25), bg="khaki")
-        label.pack(pady=100)
+        super().__init__(parent, bg="#fdf6e3")
+        self.controller = controller
+        self.pages = []
+        self.current_page_index = 0
 
-        back_btn = tk.Button(self, text="Back to Home",
-                             command=lambda: controller.show_frame("StartPage"))
-        back_btn.pack()
+        # Title/Header
+        self.header = tk.Label(self, text="Reading Room", font=("Arial", 14), bg="#fdf6e3")
+        self.header.pack(pady=5)
+
+        # Text Area (Disabled so user can't type in the book)
+        self.text_area = tk.Text(self, wrap="word", font=("Georgia", 13),
+                                 bg="#fdf6e3", padx=40, pady=20, borderwidth=0)
+        self.text_area.pack(expand=True, fill="both")
+
+        # Navigation Frame
+        nav_frame = tk.Frame(self, bg="#fdf6e3")
+        nav_frame.pack(fill="x", pady=10)
+
+        tk.Button(nav_frame, text="◀ Prev", command=self.prev_page).pack(side="left", padx=50)
+        self.page_label = tk.Label(nav_frame, text="Page 0 of 0", bg="#fdf6e3")
+        self.page_label.pack(side="left", expand=True)
+        tk.Button(nav_frame, text="Next ▶", command=self.next_page).pack(side="right", padx=50)
+
+        # File Controls
+        tk.Button(self, text="Open EPUB", command=self.load_epub).pack(pady=5)
+        tk.Button(self, text="Home", command=lambda: controller.show_frame("StartPage")).pack(pady=5)
+
+    def load_epub(self):
+        #file_path = filedialog.askopenfilename(filetypes=[("EPUB files", "*.epub")])
+        file_path = "booksForServer/Eragon (Christopher Paolini).epub"
+        if not file_path: return
+
+        book = epub.read_epub(file_path)
+        self.pages = []
+
+        for item in book.get_items():
+            if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                soup = BeautifulSoup(item.get_content(), 'html.parser')
+                text = soup.get_text().strip()
+                if text:
+                    # Optional: Split very long chapters into smaller chunks
+                    # Here we just treat each chapter as a page for simplicity
+                    self.pages.append(text)
+
+        self.current_page_index = 0
+        self.update_page()
+
+    def update_page(self):
+        if not self.pages: return
+
+        self.text_area.config(state="normal")  # Enable editing to change text
+        self.text_area.delete('1.0', tk.END)
+        self.text_area.insert(tk.END, self.pages[self.current_page_index])
+        self.text_area.config(state="disabled")  # Disable again so it's read-only
+
+        self.page_label.config(text=f"Page {self.current_page_index + 1} of {len(self.pages)}")
+        self.text_area.yview_moveto(0)  # Reset scroll to top of new page
+
+    def next_page(self):
+        if self.current_page_index < len(self.pages) - 1:
+            self.current_page_index += 1
+            self.update_page()
+
+    def prev_page(self):
+        if self.current_page_index > 0:
+            self.current_page_index -= 1
+            self.update_page()
 
 if __name__ == "__main__":
     app = BookWormApp()
