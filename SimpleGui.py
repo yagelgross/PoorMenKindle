@@ -12,7 +12,7 @@ class BookWormApp(tk.Tk):
 
         self.title("♣BookWormHole♣")
         self.geometry('600x800')
-        self.resizable(False, False)
+        #self.resizable(False, False)
 
         # The container will hold all the pages stacked on top of each other
         container = tk.Frame(self)
@@ -82,27 +82,79 @@ class ReadPage(tk.Frame):
         self.header = tk.Label(self, text="Reading Room", font=("Arial", 14), bg="#fdf6e3")
         self.header.pack(pady=5)
 
-        # Text Area (Disabled so user can't type in the book)
+        self.themes = [
+            {"name": "Sepia", "bg": "#e3dccb", "fg": "black", "text_bg": "#fdf6e3"},
+            {"name": "Dark Mode", "bg": "#2b2b2b", "fg": "white", "text_bg": "#333333"},
+            {"name": "Light Mode", "bg": "white", "fg": "black", "text_bg": "white"}
+        ]
+        self.current_theme_index = 0
+        self.configure(bg=self.themes[0]["bg"])
+
+        self.header = tk.Label(self, text="Reading Room", font=("Arial", 14))
+        self.header.pack(pady=5)
+
+        self.theme_btn = tk.Button(self, text="Theme", command=self.toggle_theme, bg="gold")
+        self.theme_btn.pack(pady=2)
+
+        # Text Area
         self.text_area = tk.Text(self, wrap="word", font=("Georgia", 13),
-                                 bg="#fdf6e3", padx=40, pady=20, borderwidth=0)
+                                 padx=40, pady=20, borderwidth=0)
         self.text_area.pack(expand=True, fill="both")
 
         # Navigation Frame
-        nav_frame = tk.Frame(self, bg="#fdf6e3")
-        nav_frame.pack(fill="x", pady=10)
+        self.nav_frame = tk.Frame(self)
+        self.nav_frame.pack(fill="x", pady=10)
 
-        tk.Button(nav_frame, text="◀ Prev", command=self.prev_page).pack(side="left", padx=50)
-        self.page_label = tk.Label(nav_frame, text="Page 0 of 0", bg="#fdf6e3")
+        self.btn_prev = tk.Button(self.nav_frame, text="◀ Prev", command=self.prev_page)
+        self.btn_prev.pack(side="left", padx=50)
+
+        self.page_label = tk.Label(self.nav_frame, text="Page 0 of 0")
         self.page_label.pack(side="left", expand=True)
-        tk.Button(nav_frame, text="Next ▶", command=self.next_page).pack(side="right", padx=50)
 
-        # File Controls
-        tk.Button(self, text="Open EPUB", command=self.load_epub).pack(pady=5)
-        tk.Button(self, text="Home", command=lambda: controller.show_frame("StartPage")).pack(pady=5)
+        self.btn_next = tk.Button(self.nav_frame, text="Next ▶", command=self.next_page)
+        self.btn_next.pack(side="right", padx=50)
 
+        # File Controls Frame (למטה)
+        controls_frame = tk.Frame(self)
+        controls_frame.pack(pady=5)
+
+        tk.Button(controls_frame, text="Open EPUB", command=self.load_epub).pack(side="left", padx=5)
+        tk.Button(controls_frame, text="Home", command=lambda: controller.show_frame("StartPage")).pack(side="left",
+                                                                                                        padx=5)
+
+        # החלת הצבעים הראשוניים
+        self.apply_theme()
+
+    def toggle_theme(self):
+        """פונקציה שעוברת לערכת הנושא הבאה ברשימה"""
+        self.current_theme_index += 1
+        if self.current_theme_index >= len(self.themes):
+            self.current_theme_index = 0
+
+        self.apply_theme()
+
+    def apply_theme(self):
+        """פונקציה שצובעת את כל הרכיבים לפי הערכה הנוכחית"""
+        theme = self.themes[self.current_theme_index]
+        bg_color = theme["bg"]
+        fg_color = theme["fg"]
+        text_bg = theme["text_bg"]
+
+        # 1. צביעת הרקע של העמוד הראשי
+        self.configure(bg=bg_color)
+
+        # 2. צביעת הכותרת
+        self.header.configure(bg=bg_color, fg=fg_color)
+
+        # 3. צביעת איזור הטקסט
+        self.text_area.configure(bg=text_bg, fg=fg_color, insertbackground=fg_color)
+
+        # 4. צביעת איזור הניווט והתווית
+        self.nav_frame.configure(bg=bg_color)
+        self.page_label.configure(bg=bg_color, fg=fg_color)
     def load_epub(self):
-        #file_path = filedialog.askopenfilename(filetypes=[("EPUB files", "*.epub")])
-        file_path = "booksForServer/Eragon (Christopher Paolini).epub"
+        file_path = filedialog.askopenfilename(filetypes=[("EPUB files", "*.epub")])
+        #file_path = "booksForServer/Eragon (Christopher Paolini).epub"
         if not file_path: return
 
         book = epub.read_epub(file_path)
