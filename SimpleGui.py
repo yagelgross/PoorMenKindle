@@ -70,6 +70,7 @@ class RequestPage(tk.Frame):
                              command=lambda: controller.show_frame("StartPage"))
         back_btn.pack()
 
+
 class ReadPage(tk.Frame):
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -78,11 +79,16 @@ class ReadPage(tk.Frame):
         self.current_page_index = 0
 
         # --- Font Configuration ---
-        self.font_size = 13  # Default font size
-        self.font_family = "Georgia"  # Default font family
+        self.font_size = 13
+        self.font_family = "Georgia"
+
+        # List of available fonts for the menu
+        self.available_fonts = ["Charter", "Hoefler Text", "Palatino", "Baskerville",
+                                "Georgia", "Times New Roman", "Avenir Next", "Helvetica Neue",
+                                "Verdana", "Arial", "Courier New", "New Peninim MT", "Raanana", "Arial Hebrew"]
 
         # --- Themes Configuration ---
-        # List of dictionaries defining colors for different modes
+        # Kept the darker Sepia (#eaddcf) as requested
         self.themes = [
             {"name": "Sepia", "bg": "#eaddcf", "fg": "black", "text_bg": "#eaddcf"},
             {"name": "Dark Mode", "bg": "#2b2b2b", "fg": "white", "text_bg": "#333333"},
@@ -90,31 +96,41 @@ class ReadPage(tk.Frame):
         ]
         self.current_theme_index = 0
 
-        # Set initial background color based on the first theme
         self.configure(bg=self.themes[0]["bg"])
 
         # --- Header ---
         self.header = tk.Label(self, text="Reading Room", font=("Arial", 14))
         self.header.pack(pady=5)
 
-        # --- Top Controls Frame (Theme & Font) ---
-        # We create a specific frame to hold the buttons in a single row
+        # --- Top Controls Frame ---
         top_controls = tk.Frame(self, bg=self.themes[0]["bg"])
         top_controls.pack(pady=5)
-        self.top_controls_frame = top_controls  # Keep reference to update bg color later
+        self.top_controls_frame = top_controls
 
-        # Decrease Font Button
+        # 1. Decrease Font Button
         self.btn_minus = tk.Button(top_controls, text="A-", width=3,
                                    command=lambda: self.change_font_size(-2))
         self.btn_minus.pack(side="left", padx=5)
 
-        # Toggle Theme Button
-        # Note: On Mac, 'bg' might be ignored without tkmacosx or highlightbackground
+        # 2. Theme Button
         self.theme_btn = tk.Button(top_controls, text="🎨 Theme",
                                    command=self.toggle_theme, bg="gold")
         self.theme_btn.pack(side="left", padx=5)
 
-        # Increase Font Button
+        # 3. Font Family Button (NEW)
+        self.btn_font = tk.Button(top_controls, text="🔤 Font", bg="lightblue")
+        self.btn_font.pack(side="left", padx=5)
+
+        # Create the popup menu for fonts
+        self.font_menu = tk.Menu(self, tearoff=0)
+        for f in self.available_fonts:
+            # We use lambda f=f to capture the specific font name for each command
+            self.font_menu.add_command(label=f, command=lambda f=f: self.change_font_family(f))
+
+        # Bind the left mouse click to show the menu
+        self.btn_font.bind("<Button-1>", self.do_popup)
+
+        # 4. Increase Font Button
         self.btn_plus = tk.Button(top_controls, text="A+", width=3,
                                   command=lambda: self.change_font_size(2))
         self.btn_plus.pack(side="left", padx=5)
@@ -125,7 +141,7 @@ class ReadPage(tk.Frame):
                                  padx=40, pady=20, borderwidth=0)
         self.text_area.pack(expand=True, fill="both")
 
-        # --- Navigation Bar (Bottom) ---
+        # --- Navigation Bar ---
         self.nav_frame = tk.Frame(self)
         self.nav_frame.pack(fill="x", pady=10)
 
@@ -138,7 +154,7 @@ class ReadPage(tk.Frame):
         self.btn_next = tk.Button(self.nav_frame, text="Next ▶", command=self.next_page)
         self.btn_next.pack(side="right", padx=50)
 
-        # --- File & Home Controls ---
+        # --- Footer Controls ---
         controls_frame = tk.Frame(self)
         controls_frame.pack(pady=5)
 
@@ -146,99 +162,77 @@ class ReadPage(tk.Frame):
         tk.Button(controls_frame, text="Home", command=lambda: controller.show_frame("StartPage")).pack(side="left",
                                                                                                         padx=5)
 
-        # Apply the initial theme colors
         self.apply_theme()
 
-    def change_font_size(self, delta):
+    # --- NEW FUNCTION: Show Font Menu ---
+    def do_popup(self, event):
         """
-        Adjusts the font size by 'delta' amount.
-        Limits the size between 8 and 40 to prevent display issues.
+        Displays the font menu at the location of the mouse click.
         """
-        new_size = self.font_size + delta
+        try:
+            self.font_menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            self.font_menu.grab_release()
 
+    # --- NEW FUNCTION: Change Font Family ---
+    def change_font_family(self, new_family):
+        """
+        Updates the font family and reapplies the font settings to the text area.
+        """
+        self.font_family = new_family
+        self.text_area.configure(font=(self.font_family, self.font_size))
+
+    # --- Existing Functions ---
+    def change_font_size(self, delta):
+        new_size = self.font_size + delta
         if 8 <= new_size <= 40:
             self.font_size = new_size
-            # Update the text area font immediately
             self.text_area.configure(font=(self.font_family, self.font_size))
 
     def toggle_theme(self):
-        """
-        Cycles through the available themes in self.themes list.
-        """
         self.current_theme_index += 1
         if self.current_theme_index >= len(self.themes):
             self.current_theme_index = 0
-
         self.apply_theme()
 
     def apply_theme(self):
-        """
-        Applies the current theme colors to all relevant widgets.
-        """
         theme = self.themes[self.current_theme_index]
         bg_color = theme["bg"]
         fg_color = theme["fg"]
         text_bg = theme["text_bg"]
 
-        # 1. Update main background
         self.configure(bg=bg_color)
-
-        # 2. Update Header
         self.header.configure(bg=bg_color, fg=fg_color)
-
-        # 3. Update Text Area
         self.text_area.configure(bg=text_bg, fg=fg_color, insertbackground=fg_color)
-
-        # 4. Update Navigation Bar
         self.nav_frame.configure(bg=bg_color)
         self.page_label.configure(bg=bg_color, fg=fg_color)
-
-        # 5. Update the top controls frame background (so buttons don't look floating on wrong color)
         self.top_controls_frame.configure(bg=bg_color)
 
     def load_epub(self):
-        """
-        Opens a file dialog to select an EPUB file and parses it.
-        """
-        # Open file dialog
         file_path = filedialog.askopenfilename(filetypes=[("EPUB files", "*.epub")])
-
         if not file_path: return
 
         try:
             book = epub.read_epub(file_path)
             self.pages = []
-
             for item in book.get_items():
                 if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    # Use BeautifulSoup to strip HTML tags
                     soup = BeautifulSoup(item.get_content(), 'html.parser')
                     text = soup.get_text().strip()
                     if text:
                         self.pages.append(text)
-
             self.current_page_index = 0
             self.update_page()
         except Exception as e:
             print(f"Error reading file: {e}")
 
     def update_page(self):
-        """
-        Displays the content of the current page in the text area.
-        """
         if not self.pages: return
-
-        # Enable editing temporarily to update text
         self.text_area.config(state="normal")
         self.text_area.delete('1.0', tk.END)
         self.text_area.insert(tk.END, self.pages[self.current_page_index])
-
-        # Disable editing to make it read-only
         self.text_area.config(state="disabled")
-
         self.page_label.config(text=f"Page {self.current_page_index + 1} of {len(self.pages)}")
-
-        # Scroll to top
         self.text_area.yview_moveto(0)
 
     def next_page(self):
@@ -250,6 +244,7 @@ class ReadPage(tk.Frame):
         if self.current_page_index > 0:
             self.current_page_index -= 1
             self.update_page()
+
 if __name__ == "__main__":
     app = BookWormApp()
     app.mainloop()
