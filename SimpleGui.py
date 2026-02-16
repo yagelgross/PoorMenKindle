@@ -70,38 +70,62 @@ class RequestPage(tk.Frame):
                              command=lambda: controller.show_frame("StartPage"))
         back_btn.pack()
 
-
 class ReadPage(tk.Frame):
     def __init__(self, parent, controller):
-        super().__init__(parent, bg="#fdf6e3")
+        super().__init__(parent)
         self.controller = controller
         self.pages = []
         self.current_page_index = 0
 
-        # Title/Header
-        self.header = tk.Label(self, text="Reading Room", font=("Arial", 14), bg="#fdf6e3")
-        self.header.pack(pady=5)
+        # --- Font Configuration ---
+        self.font_size = 13  # Default font size
+        self.font_family = "Georgia"  # Default font family
 
+        # --- Themes Configuration ---
+        # List of dictionaries defining colors for different modes
         self.themes = [
-            {"name": "Sepia", "bg": "#e3dccb", "fg": "black", "text_bg": "#fdf6e3"},
+            {"name": "Sepia", "bg": "#eaddcf", "fg": "black", "text_bg": "#eaddcf"},
             {"name": "Dark Mode", "bg": "#2b2b2b", "fg": "white", "text_bg": "#333333"},
             {"name": "Light Mode", "bg": "white", "fg": "black", "text_bg": "white"}
         ]
         self.current_theme_index = 0
+
+        # Set initial background color based on the first theme
         self.configure(bg=self.themes[0]["bg"])
 
+        # --- Header ---
         self.header = tk.Label(self, text="Reading Room", font=("Arial", 14))
         self.header.pack(pady=5)
 
-        self.theme_btn = tk.Button(self, text="Theme", command=self.toggle_theme, bg="gold")
-        self.theme_btn.pack(pady=2)
+        # --- Top Controls Frame (Theme & Font) ---
+        # We create a specific frame to hold the buttons in a single row
+        top_controls = tk.Frame(self, bg=self.themes[0]["bg"])
+        top_controls.pack(pady=5)
+        self.top_controls_frame = top_controls  # Keep reference to update bg color later
 
-        # Text Area
-        self.text_area = tk.Text(self, wrap="word", font=("Georgia", 13),
+        # Decrease Font Button
+        self.btn_minus = tk.Button(top_controls, text="A-", width=3,
+                                   command=lambda: self.change_font_size(-2))
+        self.btn_minus.pack(side="left", padx=5)
+
+        # Toggle Theme Button
+        # Note: On Mac, 'bg' might be ignored without tkmacosx or highlightbackground
+        self.theme_btn = tk.Button(top_controls, text="🎨 Theme",
+                                   command=self.toggle_theme, bg="gold")
+        self.theme_btn.pack(side="left", padx=5)
+
+        # Increase Font Button
+        self.btn_plus = tk.Button(top_controls, text="A+", width=3,
+                                  command=lambda: self.change_font_size(2))
+        self.btn_plus.pack(side="left", padx=5)
+
+        # --- Main Text Area ---
+        self.text_area = tk.Text(self, wrap="word",
+                                 font=(self.font_family, self.font_size),
                                  padx=40, pady=20, borderwidth=0)
         self.text_area.pack(expand=True, fill="both")
 
-        # Navigation Frame
+        # --- Navigation Bar (Bottom) ---
         self.nav_frame = tk.Frame(self)
         self.nav_frame.pack(fill="x", pady=10)
 
@@ -114,7 +138,7 @@ class ReadPage(tk.Frame):
         self.btn_next = tk.Button(self.nav_frame, text="Next ▶", command=self.next_page)
         self.btn_next.pack(side="right", padx=50)
 
-        # File Controls Frame (למטה)
+        # --- File & Home Controls ---
         controls_frame = tk.Frame(self)
         controls_frame.pack(pady=5)
 
@@ -122,11 +146,25 @@ class ReadPage(tk.Frame):
         tk.Button(controls_frame, text="Home", command=lambda: controller.show_frame("StartPage")).pack(side="left",
                                                                                                         padx=5)
 
-        # החלת הצבעים הראשוניים
+        # Apply the initial theme colors
         self.apply_theme()
 
+    def change_font_size(self, delta):
+        """
+        Adjusts the font size by 'delta' amount.
+        Limits the size between 8 and 40 to prevent display issues.
+        """
+        new_size = self.font_size + delta
+
+        if 8 <= new_size <= 40:
+            self.font_size = new_size
+            # Update the text area font immediately
+            self.text_area.configure(font=(self.font_family, self.font_size))
+
     def toggle_theme(self):
-        """פונקציה שעוברת לערכת הנושא הבאה ברשימה"""
+        """
+        Cycles through the available themes in self.themes list.
+        """
         self.current_theme_index += 1
         if self.current_theme_index >= len(self.themes):
             self.current_theme_index = 0
@@ -134,54 +172,74 @@ class ReadPage(tk.Frame):
         self.apply_theme()
 
     def apply_theme(self):
-        """פונקציה שצובעת את כל הרכיבים לפי הערכה הנוכחית"""
+        """
+        Applies the current theme colors to all relevant widgets.
+        """
         theme = self.themes[self.current_theme_index]
         bg_color = theme["bg"]
         fg_color = theme["fg"]
         text_bg = theme["text_bg"]
 
-        # 1. צביעת הרקע של העמוד הראשי
+        # 1. Update main background
         self.configure(bg=bg_color)
 
-        # 2. צביעת הכותרת
+        # 2. Update Header
         self.header.configure(bg=bg_color, fg=fg_color)
 
-        # 3. צביעת איזור הטקסט
+        # 3. Update Text Area
         self.text_area.configure(bg=text_bg, fg=fg_color, insertbackground=fg_color)
 
-        # 4. צביעת איזור הניווט והתווית
+        # 4. Update Navigation Bar
         self.nav_frame.configure(bg=bg_color)
         self.page_label.configure(bg=bg_color, fg=fg_color)
+
+        # 5. Update the top controls frame background (so buttons don't look floating on wrong color)
+        self.top_controls_frame.configure(bg=bg_color)
+
     def load_epub(self):
+        """
+        Opens a file dialog to select an EPUB file and parses it.
+        """
+        # Open file dialog
         file_path = filedialog.askopenfilename(filetypes=[("EPUB files", "*.epub")])
-        #file_path = "booksForServer/Eragon (Christopher Paolini).epub"
+
         if not file_path: return
 
-        book = epub.read_epub(file_path)
-        self.pages = []
+        try:
+            book = epub.read_epub(file_path)
+            self.pages = []
 
-        for item in book.get_items():
-            if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                soup = BeautifulSoup(item.get_content(), 'html.parser')
-                text = soup.get_text().strip()
-                if text:
-                    # Optional: Split very long chapters into smaller chunks
-                    # Here we just treat each chapter as a page for simplicity
-                    self.pages.append(text)
+            for item in book.get_items():
+                if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                    # Use BeautifulSoup to strip HTML tags
+                    soup = BeautifulSoup(item.get_content(), 'html.parser')
+                    text = soup.get_text().strip()
+                    if text:
+                        self.pages.append(text)
 
-        self.current_page_index = 0
-        self.update_page()
+            self.current_page_index = 0
+            self.update_page()
+        except Exception as e:
+            print(f"Error reading file: {e}")
 
     def update_page(self):
+        """
+        Displays the content of the current page in the text area.
+        """
         if not self.pages: return
 
-        self.text_area.config(state="normal")  # Enable editing to change text
+        # Enable editing temporarily to update text
+        self.text_area.config(state="normal")
         self.text_area.delete('1.0', tk.END)
         self.text_area.insert(tk.END, self.pages[self.current_page_index])
-        self.text_area.config(state="disabled")  # Disable again so it's read-only
+
+        # Disable editing to make it read-only
+        self.text_area.config(state="disabled")
 
         self.page_label.config(text=f"Page {self.current_page_index + 1} of {len(self.pages)}")
-        self.text_area.yview_moveto(0)  # Reset scroll to top of new page
+
+        # Scroll to top
+        self.text_area.yview_moveto(0)
 
     def next_page(self):
         if self.current_page_index < len(self.pages) - 1:
@@ -192,7 +250,6 @@ class ReadPage(tk.Frame):
         if self.current_page_index > 0:
             self.current_page_index -= 1
             self.update_page()
-
 if __name__ == "__main__":
     app = BookWormApp()
     app.mainloop()
