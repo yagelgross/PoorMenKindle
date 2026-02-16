@@ -1,10 +1,11 @@
-import tkinter as tk                   # Core GUI library
-from tkinter import filedialog         # For the "Open File" window
+import tkinter as tk
+from tkinter import filedialog
 
-# --- External Libraries (Need to be installed) ---
+# --- External Libraries ---
 import ebooklib
-from ebooklib import epub              # For parsing .epub files
-from bs4 import BeautifulSoup          # For cleaning HTML tags out of the EPUB
+from ebooklib import epub
+from bs4 import BeautifulSoup
+
 
 class BookWormApp(tk.Tk):
     def __init__(self):
@@ -12,9 +13,8 @@ class BookWormApp(tk.Tk):
 
         self.title("♣BookWormHole♣")
         self.geometry('600x800')
-        #self.resizable(False, False)
+        self.resizable(True, True)
 
-        # The container will hold all the pages stacked on top of each other
         container = tk.Frame(self)
         container.pack(side="top", fill="both", expand=True)
         container.grid_rowconfigure(0, weight=1)
@@ -22,20 +22,18 @@ class BookWormApp(tk.Tk):
 
         self.frames = {}
 
-        # Initialize all pages
         for F in (StartPage, RequestPage, ReadPage):
             page_name = F.__name__
             frame = F(parent=container, controller=self)
             self.frames[page_name] = frame
-            # Put all pages in the same location; the one on top is visible
             frame.grid(row=0, column=0, sticky="nsew")
 
         self.show_frame("StartPage")
 
     def show_frame(self, page_name):
-        '''Show a frame for the given page name'''
         frame = self.frames[page_name]
-        frame.tkraise() # This brings the specific frame to the front
+        frame.tkraise()
+
 
 class StartPage(tk.Frame):
     def __init__(self, parent, controller):
@@ -59,6 +57,7 @@ class StartPage(tk.Frame):
                              width=50, height=10, bd=10, relief="groove",
                              command=lambda: controller.show_frame("ReadPage"))
         read_btn.pack(pady=30)
+
 
 class RequestPage(tk.Frame):
     def __init__(self, parent, controller):
@@ -88,7 +87,6 @@ class ReadPage(tk.Frame):
                                 "Verdana", "Arial", "Courier New", "New Peninim MT", "Raanana", "Arial Hebrew"]
 
         # --- Themes Configuration ---
-        # Kept the darker Sepia (#eaddcf) as requested
         self.themes = [
             {"name": "Sepia", "bg": "#eaddcf", "fg": "black", "text_bg": "#eaddcf"},
             {"name": "Dark Mode", "bg": "#2b2b2b", "fg": "white", "text_bg": "#333333"},
@@ -117,14 +115,13 @@ class ReadPage(tk.Frame):
                                    command=self.toggle_theme, bg="gold")
         self.theme_btn.pack(side="left", padx=5)
 
-        # 3. Font Family Button (NEW)
+        # 3. Font Family Button
         self.btn_font = tk.Button(top_controls, text="🔤 Font", bg="lightblue")
         self.btn_font.pack(side="left", padx=5)
 
         # Create the popup menu for fonts
         self.font_menu = tk.Menu(self, tearoff=0)
         for f in self.available_fonts:
-            # We use lambda f=f to capture the specific font name for each command
             self.font_menu.add_command(label=f, command=lambda f=f: self.change_font_family(f))
 
         # Bind the left mouse click to show the menu
@@ -164,30 +161,41 @@ class ReadPage(tk.Frame):
 
         self.apply_theme()
 
-    # --- NEW FUNCTION: Show Font Menu ---
+    # --- HELPER: Update the Title Tag Style ---
+    def update_title_style(self):
+        """
+        Configures the 'title_style' tag.
+        Updates whenever font size, family, or theme changes.
+        """
+        current_fg = self.themes[self.current_theme_index]["fg"]
+
+        self.text_area.tag_configure("title_style",
+                                     font=(self.font_family, self.font_size + 3, "bold"),  # Size + 3, Bold
+                                     justify='center',  # Center alignment
+                                     underline=True,  # Underscore
+                                     foreground=current_fg  # Match theme color
+                                     )
+
+    # --- Functions ---
     def do_popup(self, event):
-        """
-        Displays the font menu at the location of the mouse click.
-        """
         try:
             self.font_menu.tk_popup(event.x_root, event.y_root)
         finally:
             self.font_menu.grab_release()
 
-    # --- NEW FUNCTION: Change Font Family ---
     def change_font_family(self, new_family):
-        """
-        Updates the font family and reapplies the font settings to the text area.
-        """
         self.font_family = new_family
         self.text_area.configure(font=(self.font_family, self.font_size))
+        # Update title style to match new font family
+        self.update_title_style()
 
-    # --- Existing Functions ---
     def change_font_size(self, delta):
         new_size = self.font_size + delta
         if 8 <= new_size <= 40:
             self.font_size = new_size
             self.text_area.configure(font=(self.font_family, self.font_size))
+            # Update title style to match new size
+            self.update_title_style()
 
     def toggle_theme(self):
         self.current_theme_index += 1
@@ -207,6 +215,9 @@ class ReadPage(tk.Frame):
         self.nav_frame.configure(bg=bg_color)
         self.page_label.configure(bg=bg_color, fg=fg_color)
         self.top_controls_frame.configure(bg=bg_color)
+
+        # Update title color
+        self.update_title_style()
 
     def load_epub(self):
         file_path = filedialog.askopenfilename(filetypes=[("EPUB files", "*.epub")])
@@ -228,9 +239,29 @@ class ReadPage(tk.Frame):
 
     def update_page(self):
         if not self.pages: return
+
         self.text_area.config(state="normal")
         self.text_area.delete('1.0', tk.END)
-        self.text_area.insert(tk.END, self.pages[self.current_page_index])
+
+        full_text = self.pages[self.current_page_index]
+
+        # Split text into Title (first line) and Body (rest)
+        if '\n' in full_text:
+            title_text, body_text = full_text.split('\n', 1)
+        else:
+            title_text = full_text
+            body_text = ""
+
+        # 1. Insert Title
+        self.text_area.insert(tk.END, title_text + "\n")
+
+        # 2. Apply the 'title_style' tag to the first line
+        self.update_title_style()
+        self.text_area.tag_add("title_style", "1.0", "1.end")
+
+        # 3. Insert the rest of the body
+        self.text_area.insert(tk.END, body_text)
+
         self.text_area.config(state="disabled")
         self.page_label.config(text=f"Page {self.current_page_index + 1} of {len(self.pages)}")
         self.text_area.yview_moveto(0)
@@ -244,6 +275,7 @@ class ReadPage(tk.Frame):
         if self.current_page_index > 0:
             self.current_page_index -= 1
             self.update_page()
+
 
 if __name__ == "__main__":
     app = BookWormApp()
