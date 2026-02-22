@@ -5,7 +5,7 @@ from tkinter import filedialog
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
-
+from PIL import Image, ImageTk
 
 class BookWormApp(tk.Tk):
     def __init__(self):
@@ -63,12 +63,50 @@ class RequestPage(tk.Frame):
     def __init__(self, parent, controller):
         super().__init__(parent, bg="seagreen3")
         label = tk.Label(self, text="Request Page", font=("Arial", 25), bg="seagreen3")
-        label.pack(pady=100)
+        label.pack(pady=30)
 
-        back_btn = tk.Button(self, text="Back to Home",
+        try:
+            image_path = "/Users/mac/PycharmProjects/PythonProjectPrivate/ImagesForBooks/Eragon.jpg"
+            img = Image.open(image_path)
+            img = img.resize((100, 130))
+            self.photo1 = ImageTk.PhotoImage(img)
+            image_path = "/Users/mac/PycharmProjects/PythonProjectPrivate/ImagesForBooks/Eldest.png"
+            img = Image.open(image_path)
+            img = img.resize((100, 130))
+            self.photo2 = ImageTk.PhotoImage(img)
+            image_path = "/Users/mac/PycharmProjects/PythonProjectPrivate/ImagesForBooks/Brisingr.png"
+            img = Image.open(image_path)
+            img = img.resize((100, 130))
+            self.photo3 = ImageTk.PhotoImage(img)
+            image_path = "/Users/mac/PycharmProjects/PythonProjectPrivate/ImagesForBooks/Inheritance.jpg"
+            img = Image.open(image_path)
+            img = img.resize((100, 130))
+            self.photo4 = ImageTk.PhotoImage(img)
+
+            gallery_frame = tk.Frame(self, bg="seagreen3")
+            gallery_frame.pack(pady=20)
+            btn1 = tk.Button(gallery_frame, image=self.photo1, command=self.on_image_click, bd=0, cursor="hand2")
+            btn1.grid(row=0, column=0, padx=15, pady=15)
+            btn2 = tk.Button(gallery_frame, image=self.photo2, command=self.on_image_click, bd=0, cursor="hand2")
+            btn2.grid(row=0, column=1, padx=15, pady=15)
+            btn3 = tk.Button(gallery_frame, image=self.photo3, command=self.on_image_click, bd=0, cursor="hand2")
+            btn3.grid(row=0, column=2, padx=15, pady=15)
+            btn4 = tk.Button(gallery_frame, image=self.photo4, command=self.on_image_click, bd=0, cursor="hand2")
+            btn4.grid(row=0, column=3, padx=15, pady=15)
+
+
+        except Exception as e:
+            print(f"Error loading image: {e}")
+            self.img_btn = tk.Button(self, text="Missing Image\nClick to Request", command=self.on_image_click,
+                                     width=20, height=10)
+            self.img_btn.pack(pady=10)
+
+        back_btn = tk.Button(self, text="Back to Home", font=("Arial", 12),
                              command=lambda: controller.show_frame("StartPage"))
-        back_btn.pack()
+        back_btn.pack(pady=30)
 
+    def on_image_click(self):
+        tk.messagebox.showinfo("Request Sent", "Your request has been sent to the admin!")
 
 class ReadPage(tk.Frame):
     def __init__(self, parent, controller):
@@ -97,7 +135,7 @@ class ReadPage(tk.Frame):
         self.configure(bg=self.themes[0]["bg"])
 
         # --- Header ---
-        self.header = tk.Label(self, text="Reading Roo m", font=("Arial", 14))
+        self.header = tk.Label(self, text="Reading Room", font=("Arial", 14))
         self.header.pack(pady=5)
 
         # --- Top Controls Frame ---
@@ -235,7 +273,8 @@ class ReadPage(tk.Frame):
             self.current_page_index = 0
             self.update_page()
         except Exception as e:
-            print(f"Error reading file: {e}")
+            import tkinter
+            tkinter.messagebox.showerror("Error", f"Failed to load EPUB file: {e}")
 
     def update_page(self):
         if not self.pages: return
