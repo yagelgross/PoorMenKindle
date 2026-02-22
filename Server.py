@@ -16,7 +16,7 @@ availableBooks = [Book.Book("Eragon", "Cristopher Paolini", 50,
                   Book.Book("Inheritance", "Cristopher Paolini", 88,
                             "/booksForServer/Inheritance.epub"),
                   ]
-AllClients = [Client.Client("Yagel", "089756", True),
+AllClients = [Client.Client("Yagel", "123456", True),
               Client.Client("Noam", "123456", True),
               Client.Client("Taltul", "123456", False)]
 Yagel = AllClients[0]
@@ -49,6 +49,8 @@ def validate_user(userName, password):
     for client in AllClients:
         if client.getUserName() == userName and client.getPassword() == password:
             currClients.append(client)
+            for client in currClients:
+                print(client.getUserName())
             return True
     return False
 
@@ -72,6 +74,7 @@ while True:
             password = parts[2]
             if validate_user(username, password):
                 conn.send("SUCCESS".encode())
+
             else:
                 conn.send("FAIL".encode())
                 conn.close()
