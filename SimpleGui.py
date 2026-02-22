@@ -8,6 +8,9 @@ from ebooklib import epub
 from bs4 import BeautifulSoup
 from PIL import Image, ImageTk
 
+import util
+
+
 class BookWormApp(tk.Tk):
     def __init__(self):
             super().__init__()
@@ -65,18 +68,17 @@ class LoginPage(tk.Frame):
         user = self.username_entry.get()
         password = self.password_entry.get()
 
-        # בדיקה בסיסית שהשדות אינם ריקים
         if not user or not password:
             self.error_label.config(text="Please fill in all fields!")
             return
 
         try:
             client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            client_socket.connect(('', 12345))
+            client_socket.connect(('', 12347))
 
-            packet = f"LOGIN|{user}|{password}"
+            packet = f"LOGIN|{util.ceasar_cipher(user, 7)}|{util.ceasar_cipher(password, 7)}"
             client_socket.send(packet.encode('utf-8'))
-            response = client_socket.recv(1024).decode('utf-8')
+            response = util.ceasar_decipher(client_socket.recv(1024).decode('utf-8'), 4)
             client_socket.close()
 
             if response == "SUCCESS":

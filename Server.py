@@ -6,6 +6,7 @@ import Book
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
+import util
 
 
 currClients: list[Client] = []
@@ -25,11 +26,12 @@ Yagel = AllClients[0]
 Noam = AllClients[1]
 adminClients = [Yagel, Noam]
 
-class server:
+class Server:
 
 
     serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    serverSocket.bind(('', 12345))
+    serverSocket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    serverSocket.bind(('', 12347))
     serverSocket.listen(1)
 
     def epub_handler (bookname):
@@ -47,7 +49,7 @@ class server:
             return chapters
 
         except Exception as e:
-            print("Please ensure the book exists in the server's book directory and is in .epub format.")
+            print("Please ensure the book exists in the Server's book directory and is in .epub format.")
             return None
 
     def validate_user(userName, password):
@@ -75,13 +77,13 @@ class server:
 
             parts = data.split('|')
             if len(parts) == 3 and parts[0] == "LOGIN":
-                username = parts[1]
-                password = parts[2]
+                username = util.ceasar_decipher(parts[1], 7)
+                password = util.ceasar_decipher(parts[2], 7)
                 if validate_user(username, password):
-                    conn.send("SUCCESS".encode())
+                    conn.send((util.ceasar_cipher("SUCCESS", 4)).encode())
 
                 else:
-                    conn.send("FAIL".encode())
+                    conn.send((util.ceasar_cipher("FAIL", 4)).encode())
                     conn.close()
                     continue
 
