@@ -2,6 +2,10 @@ import socket
 import Client
 import Book
 import threading
+import ebooklib
+from ebooklib import epub
+from bs4 import BeautifulSoup
+
 
 currClients = []
 availableBooks = [Book.Book("Eragon", "Cristopher Paolini", 50,
@@ -24,4 +28,21 @@ serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 serverSocket.bind(('', 12345))
 serverSocket.listen(5)
 
-def EpubHandler
+def EpubHandler (Bookname):
+    try:
+        path = "booksForServer/" + Bookname + ".epub"
+        book = epub.read_epub(path)
+        chapters = []
+        for item in book.get_items():
+            if item.get_type() == ebooklib.ITEM_DOCUMENT:
+                html_content = item.get_content()
+                soup = BeautifulSoup(html_content, 'html.parser')
+                text_content = soup.get_text(separator='\n\n', strip=True)
+                if text_content:
+                    chapters.append(text_content)
+        return chapters
+
+    except Exception as e:
+        print("Please ensure the book exists in the server's book directory and is in .epub format.")
+        return None
+
