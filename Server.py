@@ -1,7 +1,6 @@
 import socket
 import Client
 import Book
-import threading
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
@@ -26,11 +25,11 @@ adminClients = [Yagel, Noam]
 
 serverSocket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 serverSocket.bind(('', 12345))
-serverSocket.listen(5)
+serverSocket.listen(1)
 
-def EpubHandler (Bookname):
+def epub_handler (bookname):
     try:
-        path = "booksForServer/" + Bookname + ".epub"
+        path = "booksForServer/" + bookname + ".epub"
         book = epub.read_epub(path)
         chapters = []
         for item in book.get_items():
@@ -45,4 +44,42 @@ def EpubHandler (Bookname):
     except Exception as e:
         print("Please ensure the book exists in the server's book directory and is in .epub format.")
         return None
+
+def validate_user(userName, password):
+    for client in AllClients:
+        if client.getUserName() == userName and client.getPassword() == password:
+            currClients.append(client)
+            return True
+    return False
+
+def get_available_books():
+    book_titles = []
+    for book in availableBooks:
+        book_titles.append(book.title)
+    return book_titles
+
+while True:
+    conn, addr = serverSocket.accept()
+    print("Client connected from:", addr)
+    try:
+        data = conn.recv(1024).decode('utf-8')
+        if not data:
+            continue
+
+        parts = data.split('|')
+        if len(parts) == 3 and parts[0] == "LOGIN":
+            username = parts[1]
+            password = parts[2]
+            if validate_user(username, password):
+                conn.send("SUCCESS".encode())
+            else:
+                conn.send("FAIL".encode())
+                conn.close()
+                continue
+
+        else:
+            conn.send("Invalid username or password. Connection will be closed.".encode())
+            conn.close()
+    except Exception as e:
+        print(f"Error handling client: {e}")
 

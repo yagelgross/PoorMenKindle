@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog
+import socket
 
 # --- External Libraries ---
 import ebooklib
@@ -9,31 +10,89 @@ from PIL import Image, ImageTk
 
 class BookWormApp(tk.Tk):
     def __init__(self):
-        super().__init__()
+            super().__init__()
 
-        self.title("♣BookWormHole♣")
-        self.geometry('600x800')
-        self.resizable(True, True)
+            self.title("♣BookWormHole♣")
+            self.geometry('600x800')
+            self.resizable(True, True)
 
-        container = tk.Frame(self)
-        container.pack(side="top", fill="both", expand=True)
-        container.grid_rowconfigure(0, weight=1)
-        container.grid_columnconfigure(0, weight=1)
+            container = tk.Frame(self)
+            container.pack(side="top", fill="both", expand=True)
+            container.grid_rowconfigure(0, weight=1)
+            container.grid_columnconfigure(0, weight=1)
 
-        self.frames = {}
+            self.frames = {}
 
-        for F in (StartPage, RequestPage, ReadPage):
-            page_name = F.__name__
-            frame = F(parent=container, controller=self)
-            self.frames[page_name] = frame
-            frame.grid(row=0, column=0, sticky="nsew")
+            for F in (LoginPage, StartPage, RequestPage, ReadPage):
+                page_name = F.__name__
+                frame = F(parent=container, controller=self)
+                self.frames[page_name] = frame
+                frame.grid(row=0, column=0, sticky="nsew")
 
-        self.show_frame("StartPage")
+            self.show_frame("LoginPage")
 
     def show_frame(self, page_name):
         frame = self.frames[page_name]
         frame.tkraise()
 
+
+class LoginPage(tk.Frame):
+    def __init__(self, parent, controller):
+        super().__init__(parent, bg="#eaddcf")
+        self.controller = controller
+
+        title = tk.Label(self, text="Login to BookWormHole", font=("Arial", 20, "bold"), bg="#eaddcf")
+        title.pack(pady=(80, 30))
+
+        user_label = tk.Label(self, text="Username:", font=("Arial", 12), bg="#eaddcf")
+        user_label.pack(pady=(10, 0))
+        self.username_entry = tk.Entry(self, font=("Arial", 12), width=25)
+        self.username_entry.pack(pady=5)
+
+        pass_label = tk.Label(self, text="Password:", font=("Arial", 12), bg="#eaddcf")
+        pass_label.pack(pady=(10, 0))
+        self.password_entry = tk.Entry(self, font=("Arial", 12), width=25, show="*")
+        self.password_entry.pack(pady=5)
+
+        self.error_label = tk.Label(self, text="", fg="red", bg="#eaddcf", font=("Arial", 10))
+        self.error_label.pack(pady=5)
+
+        login_btn = tk.Button(self, text="Login", font=("Arial", 12, "bold"), bg="cyan", width=15,
+                              command=self.check_login)
+        login_btn.pack(pady=20)
+
+    def check_login(self):
+        user = self.username_entry.get()
+        password = self.password_entry.get()
+
+        # בדיקה בסיסית שהשדות אינם ריקים
+        if not user or not password:
+            self.error_label.config(text="Please fill in all fields!")
+            return
+
+        try:
+            client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client_socket.connect(('', 12345))
+
+            packet = f"LOGIN|{user}|{password}"
+            client_socket.send(packet.encode('utf-8'))
+            response = client_socket.recv(1024).decode('utf-8')
+            client_socket.close()
+
+            if response == "SUCCESS":
+                self.error_label.config(text="")
+                self.username_entry.delete(0, tk.END)
+                self.password_entry.delete(0, tk.END)
+                self.controller.show_frame("StartPage")
+            elif response == "FAIL":
+                self.error_label.config(text="Invalid username or password!")
+            else:
+                self.error_label.config(text="Server error occurred.")
+
+        except ConnectionRefusedError:
+            self.error_label.config(text="Server is offline. Cannot connect.")
+        except Exception as e:
+            self.error_label.config(text=f"Connection error: {e}")
 
 class StartPage(tk.Frame):
     def __init__(self, parent, controller):
@@ -66,19 +125,19 @@ class RequestPage(tk.Frame):
         label.pack(pady=30)
 
         try:
-            image_path = "/Users/mac/PycharmProjects/PythonProjectPrivate/ImagesForBooks/Eragon.jpg"
+            image_path = "ImagesForBooks/Eragon.jpg"
             img = Image.open(image_path)
             img = img.resize((100, 130))
             self.photo1 = ImageTk.PhotoImage(img)
-            image_path = "/Users/mac/PycharmProjects/PythonProjectPrivate/ImagesForBooks/Eldest.png"
+            image_path = "ImagesForBooks/Eldest.png"
             img = Image.open(image_path)
             img = img.resize((100, 130))
             self.photo2 = ImageTk.PhotoImage(img)
-            image_path = "/Users/mac/PycharmProjects/PythonProjectPrivate/ImagesForBooks/Brisingr.png"
+            image_path = "ImagesForBooks/Brisingr.png"
             img = Image.open(image_path)
             img = img.resize((100, 130))
             self.photo3 = ImageTk.PhotoImage(img)
-            image_path = "/Users/mac/PycharmProjects/PythonProjectPrivate/ImagesForBooks/Inheritance.jpg"
+            image_path = "ImagesForBooks/Inheritance.jpg"
             img = Image.open(image_path)
             img = img.resize((100, 130))
             self.photo4 = ImageTk.PhotoImage(img)
