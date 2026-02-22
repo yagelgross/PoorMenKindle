@@ -84,7 +84,7 @@ class ReadPage(tk.Frame):
         # List of available fonts for the menu
         self.available_fonts = ["Charter", "Hoefler Text", "Palatino", "Baskerville",
                                 "Georgia", "Times New Roman", "Avenir Next", "Helvetica Neue",
-                                "Verdana", "Arial", "Courier New", "New Peninim MT", "Raanana", "Arial Hebrew"]
+                                "Verdana", "Arial", "Courier New", "New Peninim MT", "Comic sans", "Raanana", "Arial Hebrew"]
 
         # --- Themes Configuration ---
         self.themes = [
@@ -97,7 +97,7 @@ class ReadPage(tk.Frame):
         self.configure(bg=self.themes[0]["bg"])
 
         # --- Header ---
-        self.header = tk.Label(self, text="Reading Room", font=("Arial", 14))
+        self.header = tk.Label(self, text="Reading Roo m", font=("Arial", 14))
         self.header.pack(pady=5)
 
         # --- Top Controls Frame ---
