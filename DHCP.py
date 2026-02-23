@@ -47,7 +47,7 @@ NETMASK = addrs[netifaces.AF_INET][0]['netmask']
 base_prefix = '.'.join(SERVER_IP.split('.')[:-1]) + '.'
 IPPool = DHCPIPPool.DHCPIPPool(base_ip=base_prefix, start=150, end=230)
 
-DNS_SERVER = "8.8.8.8"
+DNS_SERVER = SERVER_IP
 
 # Main DHCP server loop
 while True:
