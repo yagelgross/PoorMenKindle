@@ -24,8 +24,8 @@ class NetworkManager:
         # --- Chapter Buffer ---
         # Stores received chapters: {chapter_index: chapter_text}
         self.chapter_buffer: dict[int, str] = {}
-        self.next_server_index = 0      # Next chapter to request from server
-        self.current_read_index = 0     # Chapter the user is currently reading
+        self.next_server_index = 0
+        self.current_read_index = 0
         self.book_finished = False
 
         # --- Threading ---
@@ -38,7 +38,7 @@ class NetworkManager:
         self.on_chapter_ready = None  # set by ReadPage
 
     def connect(self) -> bool:
-        """Establish a persistent connection to the server."""
+        #Establish a persistent connection to the server.
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((self.host, self.port))
@@ -48,7 +48,7 @@ class NetworkManager:
             return False
 
     def login(self, username: str, password: str) -> str:
-        """Send login credentials. Returns 'SUCCESS' or 'FAIL'."""
+        #Send login credentials. Returns 'SUCCESS' or 'FAIL'.
         packet = (f"{protocol.MSG_LOGIN}{protocol.SEPARATOR}"
                   f"{util.ceasar_cipher(username, 7)}{protocol.SEPARATOR}"
                   f"{util.ceasar_cipher(password, 7)}")
@@ -57,10 +57,9 @@ class NetworkManager:
         return util.ceasar_decipher(response, 4)
 
     def request_book(self, book_title: str) -> bool:
-        """
-        Request a book from the server.
-        Receives metadata, then starts the prefetch thread.
-        """
+
+        #Request a book from the server.
+        #Receives metadata, then starts the prefetch thread.
         # Reset state
         self.chapter_buffer.clear()
         self.next_server_index = 0
@@ -114,7 +113,7 @@ class NetworkManager:
                     self.book_finished = True
                     break
 
-                parts = response.split(protocol.SEPARATOR, 2)  # maxsplit=2 (chapter text may contain |)
+                parts = response.split(protocol.SEPARATOR, 2)  # max split = 2 (chapter text may contain |)
 
                 if parts[0] == protocol.MSG_CHAPTER:
                     chapter_idx = int(parts[1])
@@ -139,19 +138,17 @@ class NetworkManager:
                 threading.Event().wait(timeout=0.1)
 
     def get_chapter(self, index: int) -> str | None:
-        """
-        Get a chapter from the buffer.
-        Returns the text if available, None if not yet buffered.
-        """
+
+        #Get a chapter from the buffer.
+        #Returns the text if available, None if not yet buffered.
+
         with self._lock:
             return self.chapter_buffer.get(index, None)
 
     def notify_user_advanced(self, new_read_index: int):
-        """
-        Called when the user moves to a new chapter.
-        Updates current_read_index so the prefetch thread knows
-        it can fetch more.
-        """
+
+        #Called when the user moves to a new chapter.
+        #Updates current_read_index so the prefetch thread knows it can fetch more.
         with self._lock:
             self.current_read_index = new_read_index
             # Optionally: evict old chapters to save memory
@@ -160,7 +157,7 @@ class NetworkManager:
                 del self.chapter_buffer[k]
 
     def stop(self):
-        """Stop prefetching and close the connection."""
+        #Stop prefetching and close the connection.
         self._running = False
         if self.sock:
             try:
