@@ -1,3 +1,5 @@
+import base64
+import os
 import socket
 import threading
 
@@ -14,10 +16,11 @@ import protocol
 currClients: list[Client.Client] = []
 
 availableBooks = [
-    Book.Book("Eragon", "Cristopher Paolini", 50, "booksForServer/Eragon.epub"),
-    Book.Book("Eldest", "Cristopher Paolini", 83, "booksForServer/Eldest.epub"),
-    Book.Book("Brisingr", "Cristopher Paolini", 68, "booksForServer/Brisingr.epub"),
-    Book.Book("Inheritance", "Cristopher Paolini", 88, "booksForServer/Inheritance.epub"),
+    Book.Book("Eragon",      "Christopher Paolini", 50, "booksForServer/Eragon.epub",      "booksForServer/covers/Eragon.jpg"),
+    Book.Book("Eldest",      "Christopher Paolini", 83, "booksForServer/Eldest.epub",       "booksForServer/covers/Eldest.png"),
+    Book.Book("Brisingr",    "Christopher Paolini", 68, "booksForServer/Brisingr.epub",     "booksForServer/covers/Brisingr.png"),
+    Book.Book("Inheritance", "Christopher Paolini", 88, "booksForServer/Inheritance.epub",  "booksForServer/covers/Inheritance.jpg"),
+    Book.Book("אראגון", "כריסטופר פאוליני", 64, "booksForServer/אראגון.epub",      "booksForServer/covers/אראגון.jpeg"),
 ]
 
 AllClients = [
@@ -26,12 +29,23 @@ AllClients = [
     Client.Client("taltul", "123456", False),
 ]
 
-# Cache parsed books so we don't re-parse the EPUB on every request
+# Cache parsed books so we don't reparse the EPUB on every request
 book_cache: dict[str, list[str]] = {}
+
+# Maps client address → authenticated Client object (for progress tracking)
+current_client_map: dict[tuple, Client.Client] = {}
+
+
+def get_cover_base64(book: Book.Book) -> str:
+    #Read a book's cover image and return it as a base64 string, or '' if none.
+    if book.coverPath and os.path.exists(book.coverPath):
+        with open(book.coverPath, "rb") as f:
+            return base64.b64encode(f.read()).decode("ascii")
+    return ""
 
 
 def epub_handler(bookname: str) -> list[str] | None:
-    """Parse an EPUB file and return a list of chapter texts."""
+    #Parse an EPUB file and return a list of chapter texts.
     if bookname in book_cache:
         return book_cache[bookname]
 
@@ -62,7 +76,7 @@ def validate_user(username: str, password: str) -> bool:
 
 
 def handle_client(conn: socket.socket, addr):
-    """Handle one client connection through login → book request → chapter streaming."""
+    #Handle one client connection through login → book request → chapter streaming.
     print(f"Client connected from: {addr}")
     authenticated = False
 
@@ -84,9 +98,32 @@ def handle_client(conn: socket.socket, addr):
                 if validate_user(username, password):
                     protocol.send_message(conn, util.ceasar_cipher("SUCCESS", 4))
                     authenticated = True
+                    # Store reference to the authenticated Client object
+                    for c in AllClients:
+                        if c.getUserName() == username:
+                            current_client_map[addr] = c
+                            break
                     print(f"User '{username}' authenticated.")
                 else:
                     protocol.send_message(conn, util.ceasar_cipher("FAIL", 4))
+
+            # ─── BOOK LIST ───
+            elif msg_type == protocol.MSG_REQUEST_BOOK_LIST and authenticated:
+                # Send header: BOOK_LIST|count
+                protocol.send_message(
+                    conn,
+                    f"{protocol.MSG_BOOK_LIST}{protocol.SEPARATOR}{len(availableBooks)}"
+                )
+                # Send one BOOK_LIST_ITEM per book
+                for book in availableBooks:
+                    cover_b64 = get_cover_base64(book)
+                    item = (f"{protocol.MSG_BOOK_LIST_ITEM}"
+                            f"{protocol.SEPARATOR}{book.title}"
+                            f"{protocol.SEPARATOR}{book.author}"
+                            f"{protocol.SEPARATOR}{book.chapterCount}"
+                            f"{protocol.SEPARATOR}{cover_b64}")
+                    protocol.send_message(conn, item)
+                print(f"Sent book list ({len(availableBooks)} books) to {addr}")
 
             # ─── REQUEST BOOK ───
             elif msg_type == protocol.MSG_REQUEST_BOOK and len(parts) == 2 and authenticated:
@@ -101,9 +138,7 @@ def handle_client(conn: socket.socket, addr):
                 meta = f"{protocol.MSG_BOOK_META}{protocol.SEPARATOR}{book_title}{protocol.SEPARATOR}{len(chapters)}"
                 protocol.send_message(conn, meta)
 
-                # Now enter the chapter-streaming loop:
-                # Wait for NEXT_CHAPTER requests and send one chapter at a time.
-                # The CLIENT controls pacing (only requests when buffer < 2).
+                # Chapter-streaming loop
                 chapter_index = 0
                 while chapter_index < len(chapters):
                     req = protocol.recv_message(conn)
@@ -117,12 +152,63 @@ def handle_client(conn: socket.socket, addr):
                                f"{protocol.SEPARATOR}{chapters[chapter_index]}")
                         protocol.send_message(conn, msg)
                         chapter_index += 1
+
+                    elif req == protocol.MSG_STOP_READING:
+                        # Client wants to stop reading — exit the streaming loop
+                        print(f"Client {addr} stopped reading '{book_title}' at ch.{chapter_index}")
+                        break
+
+                    elif req.startswith(protocol.MSG_SAVE_PROGRESS):
+                        # Handle progress saves during streaming
+                        save_parts = req.split(protocol.SEPARATOR)
+                        if len(save_parts) == 3:
+                            client = current_client_map.get(addr)
+                            if client:
+                                client.setCurrChapter(save_parts[1], int(save_parts[2]))
+
                     else:
                         break  # Unexpected message, exit streaming
 
-                # All chapters sent
+                # Done streaming (finished or stopped) — send END_OF_BOOK
                 protocol.send_message(conn, protocol.MSG_END_OF_BOOK)
-                print(f"Finished streaming '{book_title}' to {addr}")
+                print(f"Ended streaming '{book_title}' to {addr}")
+
+            # ─── SAVE PROGRESS ───
+            elif msg_type == protocol.MSG_SAVE_PROGRESS and len(parts) == 3 and authenticated:
+                book_title = parts[1]
+                chapter = int(parts[2])
+                client = current_client_map.get(addr)
+                if client:
+                    client.setCurrChapter(book_title, chapter)
+                    print(f"Saved progress: {client.getUserName()} → {book_title} ch.{chapter}")
+
+            # ─── GET PROGRESS ───
+            elif msg_type == protocol.MSG_GET_PROGRESS and len(parts) == 2 and authenticated:
+                book_title = parts[1]
+                client = current_client_map.get(addr)
+                chapter = -1
+                if client:
+                    chapter = client.getCurrChapter(book_title)
+                protocol.send_message(
+                    conn,
+                    f"{protocol.MSG_PROGRESS}{protocol.SEPARATOR}{chapter}"
+                )
+
+            # ─── GET LAST BOOK ───
+            elif msg_type == protocol.MSG_GET_LAST_BOOK and authenticated:
+                client = current_client_map.get(addr)
+                if client and client.lastBookRead:
+                    title = client.lastBookRead
+                    chapter = client.getCurrChapter(title)
+                    protocol.send_message(
+                        conn,
+                        f"{protocol.MSG_LAST_BOOK}{protocol.SEPARATOR}{title}{protocol.SEPARATOR}{chapter}"
+                    )
+                else:
+                    protocol.send_message(
+                        conn,
+                        f"{protocol.MSG_LAST_BOOK}{protocol.SEPARATOR}NONE"
+                    )
 
             else:
                 protocol.send_message(conn, f"{protocol.MSG_ERROR}|Unknown command")
@@ -130,6 +216,7 @@ def handle_client(conn: socket.socket, addr):
     except Exception as e:
         print(f"Error handling client {addr}: {e}")
     finally:
+        current_client_map.pop(addr, None)
         conn.close()
         print(f"Connection closed: {addr}")
 
@@ -143,7 +230,6 @@ def start_server():
 
     while True:
         conn, addr = server_socket.accept()
-        # Each client gets its own thread
         thread = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
         thread.start()
 

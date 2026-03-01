@@ -320,6 +320,7 @@ class ReadPage(tk.Frame):
         self.total_chapters = 0
         self.pages = []  # For local epub reading
         self.reading_mode = None  # "server" or "local"
+        self.is_hebrew = False  # Whether the current book is in Hebrew (RTL)
 
         # --- Font Configuration ---
         self.font_size = 13
@@ -414,6 +415,7 @@ class ReadPage(tk.Frame):
         self.net_manager = net_manager
         self.current_page_index = 0
         self.total_chapters = net_manager.total_chapters
+        self.is_hebrew = self._contains_hebrew(net_manager.book_title)
 
         # Set callback: when a chapter arrives, refresh if needed
         net_manager.on_chapter_ready = self._on_chapter_ready
@@ -456,6 +458,7 @@ class ReadPage(tk.Frame):
         self.update_title_style()
         self.text_area.tag_add("title_style", "1.0", "1.end")
         self.text_area.insert(tk.END, body_text)
+        self._apply_rtl_direction()
 
         self.text_area.config(state="disabled")
         self.page_label.config(text=f"Chapter {self.current_page_index + 1} of {self.total_chapters}")
@@ -496,7 +499,7 @@ class ReadPage(tk.Frame):
 
         self.text_area.tag_configure("title_style",
                                      font=(self.font_family, self.font_size + 3, "bold"),  # Size + 3, Bold
-                                     justify='center',  # Center alignment
+                                     justify='right' if self.is_hebrew else 'center',  # RTL or center
                                      underline=True,  # Underscore
                                      foreground=current_fg  # Match theme color
                                      )
@@ -527,6 +530,19 @@ class ReadPage(tk.Frame):
         if self.current_theme_index >= len(self.themes):
             self.current_theme_index = 0
         self.apply_theme()
+
+    @staticmethod
+    def _contains_hebrew(text: str) -> bool:
+        """Check if a string contains Hebrew characters (Unicode block 0x0590-0x05FF)."""
+        return any('\u0590' <= ch <= '\u05FF' for ch in text)
+
+    def _apply_rtl_direction(self):
+        """Configure the text area for RTL (Hebrew) or LTR display."""
+        if self.is_hebrew:
+            self.text_area.tag_configure("rtl", justify="right")
+            self.text_area.tag_add("rtl", "1.0", tk.END)
+        else:
+            self.text_area.tag_remove("rtl", "1.0", tk.END)
 
     def apply_theme(self):
         theme = self.themes[self.current_theme_index]
@@ -561,6 +577,9 @@ class ReadPage(tk.Frame):
             self.reading_mode = "local"
             self.current_page_index = 0
             self.total_chapters = len(self.pages)
+            # Detect Hebrew from the file name
+            import os
+            self.is_hebrew = self._contains_hebrew(os.path.basename(file_path))
             self.update_page()
         except Exception as e:
             import tkinter
@@ -590,6 +609,7 @@ class ReadPage(tk.Frame):
 
         # 3. Insert the rest of the body
         self.text_area.insert(tk.END, body_text)
+        self._apply_rtl_direction()
 
         self.text_area.config(state="disabled")
         self.page_label.config(text=f"Page {self.current_page_index + 1} of {len(self.pages)}")
