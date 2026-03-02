@@ -263,10 +263,10 @@ class RequestPage(tk.Frame):
 
         # Book data: (title, image_path)
         self.books = [
-            ("Eragon", "ImagesForBooks/Eragon.jpg"),
-            ("Eldest", "ImagesForBooks/Eldest.png"),
-            ("Brisingr", "ImagesForBooks/Brisingr.png"),
-            ("Inheritance", "ImagesForBooks/Inheritance.jpg"),
+            ("Eragon", "booksForServer/covers/Eragon.jpg"),
+            ("Eldest", "booksForServer/covers/Eldest.png"),
+            ("Brisingr", "booksForServer/covers/Brisingr.png"),
+            ("Inheritance", "booksForServer/covers/Inheritance.jpg"),
         ]
 
         self.photos = []
@@ -485,6 +485,7 @@ class ReadPage(tk.Frame):
         if self.current_page_index > 0:
             self.current_page_index -= 1
             if self.reading_mode == "server":
+                self.net_manager.notify_user_advanced(self.current_page_index)
                 self._try_display_current()
             elif self.reading_mode == "local":
                 self.update_page()
