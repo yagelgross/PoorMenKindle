@@ -151,10 +151,11 @@ class NetworkManager:
         #Updates current_read_index so the prefetch thread knows it can fetch more.
         with self._lock:
             self.current_read_index = new_read_index
+
             # Optionally: evict old chapters to save memory
-            keys_to_remove = [k for k in self.chapter_buffer if k < new_read_index - 1]
-            for k in keys_to_remove:
-                del self.chapter_buffer[k]
+            # keys_to_remove = [k for k in self.chapter_buffer if k < new_read_index - 1]
+            # for k in keys_to_remove:
+            #     del self.chapter_buffer[k]
 
     def stop(self):
         #Stop prefetching and close the connection.
