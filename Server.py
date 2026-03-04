@@ -153,6 +153,14 @@ def handle_client(conn: socket.socket, addr):
                         protocol.send_message(conn, msg)
                         chapter_index += 1
 
+                    elif req == protocol.MSG_PREV_CHAPTER:
+                        if chapter_index > 0:
+                            chapter_index -= 1
+                            msg = (f"{protocol.MSG_CHAPTER}"
+                                   f"{protocol.SEPARATOR}{chapter_index}"
+                                   f"{protocol.SEPARATOR}{chapters[chapter_index]}")
+                            protocol.send_message(conn, msg)
+
                     elif req == protocol.MSG_STOP_READING:
                         # Client wants to stop reading — exit the streaming loop
                         print(f"Client {addr} stopped reading '{book_title}' at ch.{chapter_index}")
