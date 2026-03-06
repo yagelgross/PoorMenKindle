@@ -47,7 +47,7 @@ def get_min_ttl(resp_bytes: bytes) -> int:
 def startdns():
     global pIndex
     cache= {}
-    print(f"{pIndex}: DNS over HTTP Server started")
+    print(f"{pIndex}: DNS over HTTPS Server started")
     pIndex+=1
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
