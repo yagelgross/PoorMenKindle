@@ -38,7 +38,7 @@ def doh_forward(query_bytes: bytes, timeout=2.0) -> bytes:
     return r.data
 
 def get_min_ttl(resp_bytes: bytes) -> int:
-    # Use minimum TTL in answer section (rr). If no answers, don't cache.
+    # Use minimum TTL in an answer section (rr). If no answers, don't cache.
     reply = DNSRecord.parse(resp_bytes)
     if not reply.rr:
         return 0
