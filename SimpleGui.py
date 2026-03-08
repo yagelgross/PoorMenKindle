@@ -49,20 +49,33 @@ class LoginPage(tk.Frame):
         title = tk.Label(self, text="Login to BookWormHole", font=("Arial", 20, "bold"), bg="#eaddcf")
         title.pack(pady=(60, 20))
 
-        # Server IP field (needed when connecting from a VM or different machine)
+        # Server IP field
         ip_label = tk.Label(self, text="Server IP:", font=("Arial", 12), bg="#eaddcf")
-        ip_label.pack(pady=(10, 0))
+        ip_label.pack(pady=(5, 0))
         self.ip_entry = tk.Entry(self, font=("Arial", 12), width=25)
         self.ip_entry.insert(0, "127.0.0.1")
         self.ip_entry.pack(pady=5)
 
+        # --- choose a protocol ---
+        protocol_label = tk.Label(self, text="Protocol:", font=("Arial", 12), bg="#eaddcf")
+        protocol_label.pack(pady=(5, 0))
+
+        self.protocol_var = tk.StringVar(value="TCP")
+        radio_frame = tk.Frame(self, bg="#eaddcf")
+        radio_frame.pack(pady=5)
+        tk.Radiobutton(radio_frame, text="TCP", variable=self.protocol_var, value="TCP", bg="#eaddcf",
+                       font=("Arial", 10)).pack(side="left", padx=10)
+        tk.Radiobutton(radio_frame, text="RUDP", variable=self.protocol_var, value="RUDP", bg="#eaddcf",
+                       font=("Arial", 10)).pack(side="left", padx=10)
+        # -------------------------------------
+
         user_label = tk.Label(self, text="Username:", font=("Arial", 12), bg="#eaddcf")
-        user_label.pack(pady=(10, 0))
+        user_label.pack(pady=(5, 0))
         self.username_entry = tk.Entry(self, font=("Arial", 12), width=25)
         self.username_entry.pack(pady=5)
 
         pass_label = tk.Label(self, text="Password:", font=("Arial", 12), bg="#eaddcf")
-        pass_label.pack(pady=(10, 0))
+        pass_label.pack(pady=(5, 0))
         self.password_entry = tk.Entry(self, font=("Arial", 12), width=25, show="*")
         self.password_entry.pack(pady=5)
 
@@ -77,6 +90,7 @@ class LoginPage(tk.Frame):
         user = self.username_entry.get()
         password = self.password_entry.get()
         server_ip = self.ip_entry.get().strip()
+        selected_protocol = self.protocol_var.get()
 
         if not user or not password:
             self.error_label.config(text="Please fill in all fields!")
@@ -87,15 +101,29 @@ class LoginPage(tk.Frame):
             return
 
         net = self.controller.net_manager
-        # Update the host in case the user changed it (e.g. connecting from a VM)
         net.host = server_ip
 
-        if not net.sock or net.sock.fileno() == -1:
-            if not net.TCP_connect():
-                self.error_label.config(text="Server is offline. Cannot connect.")
-                return
+        # update the selected protocol
+        net.type = selected_protocol
 
-        response = net.TCP_login(user, password)
+        # reset the socket and assembler
+        if net.type == "RUDP":
+            import socket
+            from RUDPHandle import ChapterAssembler
+            net.server_addr = (net.host, net.port)
+            net.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            net.assembler = ChapterAssembler()
+        else:
+            net.sock = None  # initialize to None for TCP
+            net.assembler = None
+
+        # using wrapper function to handle exceptions
+        if not net.connect():
+            self.error_label.config(text="Server is offline. Cannot connect.")
+            return
+
+        # using wrapper function to handle exceptions
+        response = net.login(user, password)
 
         if response == "SUCCESS":
             self.controller.show_frame("StartPage")
@@ -103,7 +131,6 @@ class LoginPage(tk.Frame):
             self.error_label.config(text="Invalid username or password!")
         else:
             self.error_label.config(text="Server error occurred.")
-
 
 def _create_card_button(parent, title_text, desc_text,
                         bg_color, hover_color, command):
@@ -298,9 +325,9 @@ class RequestPage(tk.Frame):
         net_manager = self.controller.net_manager  # stored on the app controller
 
         def do_request():
-            success = net_manager.TCP_request_book(book_title)
+            # calling the get_book method of the NetManager class
+            success = net_manager.request_book(book_title)
             if success:
-                # Switch to ReadPage and start displaying
                 read_page = self.controller.frames["ReadPage"]
                 read_page.start_reading(net_manager)
                 self.controller.show_frame("ReadPage")
@@ -308,7 +335,7 @@ class RequestPage(tk.Frame):
                 import tkinter.messagebox
                 tkinter.messagebox.showerror("Error", f"Could not load '{book_title}'")
 
-        # Run in a thread so UI doesn't freeze
+        # Start the request in a separate thread
         threading.Thread(target=do_request, daemon=True).start()
 
 class ReadPage(tk.Frame):

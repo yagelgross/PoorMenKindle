@@ -36,9 +36,181 @@ book_cache: dict[str, list[str]] = {}
 # Maps client address → authenticated Client object (for progress tracking)
 current_client_map: dict[tuple, Client.Client] = {}
 
-udp_clients: dict[tuple, dict] = {}
+# ───────── dicts for RUDP handling ─────────
+# client sequence number
+udp_client_seq: dict[tuple, int] = {}
+# saves the packets that have yet to be acknowledged by the client, indexed by (client_addr, seq_num): {'packet': bytes, 'timestamp': float, 'retries': int}}
+udp_unacked_messages: dict[tuple, dict] = {}
+# manage the client's state (what book and chapter it is currently reading)
+udp_client_state: dict[tuple, dict] = {}
+
+# RUDP server logistics and functions
+def get_next_seq(addr: tuple) -> int:
+    """ Returns the next sequence number for a client and increments it."""
+    if addr not in udp_client_seq:
+        udp_client_seq[addr] = 0
+    seq = udp_client_seq[addr]
+    udp_client_seq[addr] += 1
+    return seq
 
 
+def send_rudp_reliable(server_socket: socket.socket, addr: tuple, payload: str):
+    """
+    Pack the payload into a RUDP packet and send it to the client. Then, add it to the unacked messages list.
+    """
+    seq_num = get_next_seq(addr)
+    packet = protocol.build_rudp_packet(seq_num=seq_num, ack_num=0, flags=protocol.RUDP_FLAG_DATA, payload=payload)
+
+    server_socket.sendto(packet, addr)
+
+    # save to unacked messages if needed (for simplicity, we assume all messages require ACKs in this implementation)
+    udp_unacked_messages[(addr, seq_num)] = {
+        'packet': packet,
+        'timestamp': time.time(),
+        'retries': 0
+    }
+
+
+def udp_retransmission_loop(server_socket: socket.socket):
+    """
+    Server side background thread that handles retransmissions of unacknowledged messages.
+    """
+    timeout_limit = 0.5  # half a second
+    max_retries = 5
+
+    while True:
+        current_time = time.time()
+        # use a local list so that we do not modify the dict while iterating
+        for key, info in list(udp_unacked_messages.items()):
+            addr, seq_num = key
+
+            if current_time - info['timestamp'] > timeout_limit:
+                if info['retries'] < max_retries:
+                    info['timestamp'] = current_time
+                    info['retries'] += 1
+                    server_socket.sendto(info['packet'], addr)
+                    print(f"[RUDP Server] Retransmitting seq {seq_num} to {addr}")
+                else:
+                    print(f"[RUDP Server] Client {addr} unresponsive. Dropping packet {seq_num}")
+                    del udp_unacked_messages[key]
+
+        time.sleep(0.05)
+
+
+def process_udp_request(server_socket: socket.socket, addr: tuple, payload: str):
+    """
+    The business side of the server. Handles login, book requests, and chapter streaming similarly to TCP, but
+    using RUDP instead.
+    """
+    parts = payload.split(protocol.SEPARATOR)
+    msg_type = parts[0]
+
+    # --- LOGIN ---
+    if msg_type == protocol.MSG_LOGIN and len(parts) == 3:
+        username = util.ceasar_decipher(parts[1], 7)
+        password = util.ceasar_decipher(parts[2], 7)
+
+        if validate_user(username, password):
+            send_rudp_reliable(server_socket, addr, util.ceasar_cipher("SUCCESS", 4))
+            udp_client_state[addr] = {'username': username, 'authenticated': True}
+            print(f"[RUDP Server] User '{username}' authenticated from {addr}.")
+        else:
+            send_rudp_reliable(server_socket, addr, util.ceasar_cipher("FAIL", 4))
+
+    # block all other requests from unauthenticated clients
+    if addr not in udp_client_state or not udp_client_state[addr].get('authenticated'):
+        return
+
+    state = udp_client_state[addr]
+
+    # --- REQUEST BOOK ---
+    if msg_type == protocol.MSG_REQUEST_BOOK and len(parts) == 2:
+        book_title = parts[1]
+        chapters = epub_handler(book_title)
+
+        if chapters is None:
+            send_rudp_reliable(server_socket, addr, f"{protocol.MSG_ERROR}|Book not found")
+            return
+
+        # state metadata: what book the client is currently reading and what chapter it is on
+        state['current_book'] = book_title
+        state['chapter_index'] = 0
+
+        meta = f"{protocol.MSG_BOOK_META}{protocol.SEPARATOR}{book_title}{protocol.SEPARATOR}{len(chapters)}"
+        send_rudp_reliable(server_socket, addr, meta)
+
+    # --- NEXT CHAPTER ---
+    elif msg_type == protocol.MSG_NEXT_CHAPTER:
+        book_title = state.get('current_book')
+        chapter_index = state.get('chapter_index', 0)
+
+        if not book_title:
+            return
+
+        chapters = epub_handler(book_title)
+
+        if chapters and chapter_index < len(chapters):
+            chapter_text = chapters[chapter_index]
+
+            # chunk up the chapter text into smaller chunks to fit in a single RUDP packet and transmit it
+            most_chars = 500
+            total_chunks = (len(chapter_text) + most_chars - 1) // most_chars
+
+            for i in range(total_chunks):
+                start = i * most_chars
+                end = start + most_chars
+                chunk_payload = f"CHUNK|{book_title}|{chapter_index}|{total_chunks}|{i}|{chapter_text[start:end]}"
+                # send each chunk as a separate RUDP packet
+                send_rudp_reliable(server_socket, addr, chunk_payload)
+
+            print(f"[RUDP Server] Sent chapter {chapter_index} ({total_chunks} chunks) to {addr}")
+
+            # promote the client to the next chapter
+            state['chapter_index'] += 1
+
+        elif chapters and chapter_index >= len(chapters):
+            send_rudp_reliable(server_socket, addr, protocol.MSG_END_OF_BOOK)
+
+
+def start_UDP_server():
+    """Activates the RUDP server and starts listening for incoming connections."""
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    server_socket.bind(('', 12347))
+    print("RUDP Server listening on port 12347...")
+
+    # start the retransmission thread
+    threading.Thread(target=udp_retransmission_loop, args=(server_socket,), daemon=True).start()
+
+    while True:
+        try:
+            data, addr = server_socket.recvfrom(4096)
+            # unpack the packet
+            seq_num, ack_num, flags, payload = protocol.parse_rudp_packet(data)
+
+            # if the packet is an ACK, update the unacked messages list
+            if flags & protocol.RUDP_FLAG_ACK:
+                key = (addr, ack_num)
+                if key in udp_unacked_messages:
+                    del udp_unacked_messages[key]  # delete the acknowledged packet from the unacked messages
+                    print(f"[RUDP Server] Received ACK for seq {ack_num} from {addr}")
+                else:
+                    print(f"[RUDP Server] Received ACK for seq {ack_num} from {addr}, but no corresponding packet was unacked.")
+
+            # if the packet is a DATA packet, process it
+            if flags & protocol.RUDP_FLAG_DATA:
+                # first, send an ACK to the client
+                ack_packet = protocol.build_rudp_packet(seq_num=0, ack_num=seq_num, flags=protocol.RUDP_FLAG_ACK,
+                                                        payload="")
+                server_socket.sendto(ack_packet, addr)
+
+                # niw we can handle the client's request without worrying about retransmissions, since we've acknowledged receipt of the packet
+                # we use a background thread to handle the request so that we can continue processing other requests
+                threading.Thread(target=process_udp_request, args=(server_socket, addr, payload), daemon=True).start()
+
+        except Exception as e:
+            print(f"RUDP Server Error: {e}")
+
+# TCP server logistics and functions
 def get_cover_base64(book: Book.Book) -> str:
     #Read a book's cover image and return it as a base64 string, or '' if none.
     if book.coverPath and os.path.exists(book.coverPath):
@@ -248,10 +420,19 @@ def start_TCP_server():
 
 
 if __name__ == "__main__":
-    type_of = "TCP"
-    # type_of = "UDP"
-    print(f"Starting {type_of} server...")
-    if type_of == "UDP":
-        start_UDP_server()
-    else:
-        start_TCP_server()
+    print("Starting BookWormHole Servers...")
+
+    # start a TCP server thread
+    tcp_thread = threading.Thread(target=start_TCP_server, daemon=True)
+    tcp_thread.start()
+
+    # start a RUDP server thread
+    udp_thread = threading.Thread(target=start_UDP_server, daemon=True)
+    udp_thread.start()
+
+    # keep the main thread alive
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("Servers shutting down...")

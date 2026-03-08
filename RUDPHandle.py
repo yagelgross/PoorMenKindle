@@ -25,7 +25,7 @@ class ChapterAssembler:
         self.chapter_index = -1
 
     def receive_chunk(self, packet_string: str) -> str | None:
-        """Receive a chunk of a chapter and return the assembled text if complete."""
+        """Receive a chunk of a chapter and return (chapter_index, assembled_text) if complete. Otherwise, return None."""
         parts = packet_string.split('|', 5)
         if parts[0] != "CHUNK":
             return None
@@ -58,15 +58,16 @@ class ChapterAssembler:
 
         return None
 
-    def _assemble_chapter(self) -> str:
+    def _assemble_chapter(self) -> tuple[int, str] | None:
         full_text = ""
         for i in range(self.total_chunks_expected):
             full_text += self.chunks_received[i]
 
-        # reset state
+        idx = self.chapter_index
+
         self.chunks_received.clear()
         self.total_chunks_expected = -1
         self.book_name = ""
         self.chapter_index = -1
 
-        return full_text
+        return idx, full_text

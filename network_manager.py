@@ -46,6 +46,10 @@ class NetworkManager:
         # --- Callback for UI updates ---
         self.on_chapter_ready = None  # set by ReadPage
 
+        # --- Synchronization for RUDP ---
+        self.server_response_payload = ""
+        self.server_response_event = threading.Event()
+
     def TCP_connect(self) -> bool:
         """ Establish a stable and persistent TCP connection to the server."""
         #Establish a persistent connection to the server.
@@ -73,35 +77,31 @@ class NetworkManager:
         return util.ceasar_decipher(response, 4)
 
     def RUDP_login(self, username: str, password: str) -> str:
-        """ Creates and sends a RUDP login packet."""
+        """ Creates and sends a RUDP login packet securely using the listen loop. """
         # preparing the payload for the RUDP packet
         payload = (f"{protocol.MSG_LOGIN}{protocol.SEPARATOR}"
                    f"{util.ceasar_cipher(username, 7)}{protocol.SEPARATOR}"
                    f"{util.ceasar_cipher(password, 7)}")
         # packing the RUDP packet (header + payload)
-        packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.FLAG_DATA, payload=payload)
+        packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA, payload=payload)
 
         # define reliability parameters
-        self.sock.settimeout(2.0)
         max_retries = 3
 
         for attempt in range(max_retries):
-            try:
-                # transmit the packet
-                self.sock.sendto(packet, self.server_addr)
-                # wait for a response
-                response_bytes, _ = self.sock.recvfrom(1024)
-                # unpack the response
-                seq_num, ack_num, flags, response_payload = protocol.parse_rudp_packet(response_bytes)
-                # undo the timeout
-                self.sock.settimeout(None)
-                # decipher the response
-                return util.ceasar_decipher(response_payload, 4)
+            self.server_response_event.clear()  # reset the event before sending
 
-            except socket.timeout:
-                print(f"Login attempt {attempt + 1} timed out. Retrying...")
+            # transmit the packet
+            self.sock.sendto(packet, self.server_addr)
+
+            # wait for the main loop to catch the response and set the event
+            if self.server_response_event.wait(timeout=2.0):
+                # decipher the response
+                return util.ceasar_decipher(self.server_response_payload, 4)
+
+            print(f"Login attempt {attempt + 1} timed out. Retrying...")
+
         # if we reach here, it means we've tried and failed
-        self.sock.settimeout(None)
         return "FAIL"
 
     def TCP_request_book(self, book_title: str) -> bool:
@@ -137,7 +137,7 @@ class NetworkManager:
             return False
 
     def RUDP_request_book(self, book_title: str) -> bool:
-        """ Request a book from the server using RUDP."""
+        """ Request a book from the server using RUDP and start the prefetch loop. """
         self.chapter_buffer.clear()
         self.next_server_index = 0
         self.current_read_index = 0
@@ -148,68 +148,86 @@ class NetworkManager:
         payload = f"{protocol.MSG_REQUEST_BOOK}{protocol.SEPARATOR}{book_title}"
         packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA, payload=payload)
 
-        # Reliability parameters
-        self.sock.settimeout(2.0)
+        # define reliability parameters
         max_retries = 3
 
         for attempt in range(max_retries):
-            try:
-                self.sock.sendto(packet, self.server_addr)
-                response_bytes, _ = self.sock.recvfrom(1024)
-                _, _, _, response_payload = protocol.parse_rudp_packet(response_bytes)
-                parts = response_payload.split(protocol.SEPARATOR)
+            self.server_response_event.clear()
+            self.sock.sendto(packet, self.server_addr)
+
+            # wait for the server's response via the listen loop
+            if self.server_response_event.wait(timeout=2.0):
+                parts = self.server_response_payload.split(protocol.SEPARATOR)
                 if parts[0] == protocol.MSG_BOOK_META:
                     self.total_chapters = int(parts[2])
                     print(f"Book '{book_title}' has {self.total_chapters} chapters.")
 
-                self.sock.settimeout(None) # Undo the timeout
+                    # Start background prefetch
+                    self._running = True
+                    self._prefetch_thread = threading.Thread(target=self._rudp_prefetch_loop, daemon=True)
+                    self._prefetch_thread.start()
+                    return True
 
-                # Start background prefetch
-                self._running = True
-                self._prefetch_thread = threading.Thread(target=self._rudp_prefetch_loop, daemon=True)
-                self._prefetch_thread.start()
+            print(f"Request book attempt {attempt + 1} timed out. Retrying...")
 
-
-            except socket.timeout:
-                print(f"Login attempt {attempt + 1} timed out. Retrying...")
-
+        return False
 
     def _rudp_listen_loop(self):
         """
         A background thread that continuously listens for incoming RUDP packets from the server,
-        processes them, and updates the chapter buffer accordingly.
+        processes them, assembles chapters, and wakes up waiting functions.
         """
+        # set a fixed timeout to prevent Errno 35 and allow graceful exit
+        self.sock.settimeout(1.0)
+
         while self._running:
             try:
                 # receiving a UDP packet
                 data, addr = self.sock.recvfrom(4096)
+            except (socket.timeout, BlockingIOError):
+                continue  # normal behavior, keep listening
+            except Exception as e:
+                if self._running:
+                    print(f"UDP Listen Loop Error: {e}")
+                continue
+
+            try:
                 # unpacking the RUDP packet using the protocol class
                 seq_num, ack_num, flags, payload = protocol.parse_rudp_packet(data)
+
                 # if it is a data packet, send an ACK
                 if flags & protocol.RUDP_FLAG_DATA:
                     ack_packet = protocol.build_rudp_packet(seq_num=0, ack_num=seq_num, flags=protocol.RUDP_FLAG_ACK,
                                                             payload="")
                     self.sock.sendto(ack_packet, self.server_addr)
 
-                # assemble the chapter from the received chunks
-                if payload.startswith("CHUNK|"):
-                    assembled_text = self.assembler.receive_chunk(payload)
+                    # assemble the chapter from the received chunks
+                    if payload.startswith("CHUNK|"):
+                        result = self.assembler.receive_chunk(payload)
 
-                    if assembled_text:
-                        chap_idx = self.assembler.chapter_index
-                        with self._lock:
-                            self.chapter_buffer[chap_idx] = assembled_text
-                            self.next_server_index = chap_idx + 1
-                            print(f"[RUDP] Successfully assembled chapter {chap_idx}")
+                        # unpack the tuple!
+                        if result:
+                            chap_idx, assembled_text = result
+                            with self._lock:
+                                self.chapter_buffer[chap_idx] = assembled_text
+                                self.next_server_index = chap_idx + 1
+                                print(f"[RUDP] Successfully assembled chapter {chap_idx}")
 
-                        # update the UI with the new chapter
-                        self._chapter_ready.set()
-                        if self.on_chapter_ready:
-                            self.on_chapter_ready(chap_idx)
+                            # update the UI with the new chapter
+                            self._chapter_ready.set()
+                            if self.on_chapter_ready:
+                                self.on_chapter_ready(chap_idx)
+                    else:
+                        # if it's not a chunk, it's LOGIN SUCCESS or BOOK_META!
+                        # save the payload and wake up the waiting function.
+                        self.server_response_payload = payload
+                        self.server_response_event.set()
+
+                        if payload == protocol.MSG_END_OF_BOOK:
+                            self.book_finished = True
 
             except Exception as e:
-                if self._running:
-                    print(f"UDP Listen Loop Error: {e}")
+                print(f"Packet processing error: {e}")
 
     def _TCP_prefetch_loop(self):
         """
