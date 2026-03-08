@@ -11,6 +11,7 @@ import Client
 import Book
 import util
 import protocol
+import time
 
 # --- Data ---
 currClients: list[Client.Client] = []
@@ -34,6 +35,8 @@ book_cache: dict[str, list[str]] = {}
 
 # Maps client address → authenticated Client object (for progress tracking)
 current_client_map: dict[tuple, Client.Client] = {}
+
+udp_clients: dict[tuple, dict] = {}
 
 
 def get_cover_base64(book: Book.Book) -> str:
@@ -75,7 +78,7 @@ def validate_user(username: str, password: str) -> bool:
     return False
 
 
-def handle_client(conn: socket.socket, addr):
+def handle_TCP_client(conn: socket.socket, addr):
     #Handle one client connection through login → book request → chapter streaming.
     print(f"Client connected from: {addr}")
     authenticated = False
@@ -229,7 +232,7 @@ def handle_client(conn: socket.socket, addr):
         print(f"Connection closed: {addr}")
 
 
-def start_server():
+def start_TCP_server():
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server_socket.bind(('', 12347))
@@ -238,9 +241,17 @@ def start_server():
 
     while True:
         conn, addr = server_socket.accept()
-        thread = threading.Thread(target=handle_client, args=(conn, addr), daemon=True)
+        thread = threading.Thread(target=handle_TCP_client, args=(conn, addr), daemon=True)
         thread.start()
 
 
+
+
 if __name__ == "__main__":
-    start_server()
+    type_of = "TCP"
+    # type_of = "UDP"
+    print(f"Starting {type_of} server...")
+    if type_of == "UDP":
+        start_UDP_server()
+    else:
+        start_TCP_server()

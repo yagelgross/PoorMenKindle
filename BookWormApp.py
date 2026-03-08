@@ -2,5 +2,5 @@ import socket
 import Server
 
 if __name__ == "__main__":
-    Server.start_server()
+    Server.start_TCP_server()
 

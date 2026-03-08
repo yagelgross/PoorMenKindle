@@ -91,11 +91,11 @@ class LoginPage(tk.Frame):
         net.host = server_ip
 
         if not net.sock or net.sock.fileno() == -1:
-            if not net.connect():
+            if not net.TCP_connect():
                 self.error_label.config(text="Server is offline. Cannot connect.")
                 return
 
-        response = net.login(user, password)
+        response = net.TCP_login(user, password)
 
         if response == "SUCCESS":
             self.controller.show_frame("StartPage")
@@ -298,7 +298,7 @@ class RequestPage(tk.Frame):
         net_manager = self.controller.net_manager  # stored on the app controller
 
         def do_request():
-            success = net_manager.request_book(book_title)
+            success = net_manager.TCP_request_book(book_title)
             if success:
                 # Switch to ReadPage and start displaying
                 read_page = self.controller.frames["ReadPage"]
