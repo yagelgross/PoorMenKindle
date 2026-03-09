@@ -102,7 +102,7 @@ class LoginPage(tk.Frame):
             return
 
         server_ip = server_input
-        if server_input.endswith(".server"):
+        if server_input[-1].isalpha():
             try:
                 query = dns.message.make_query(server_input, dns.rdatatype.A)
                 response = dns.query.udp(query, "127.0.0.1", timeout=2)
