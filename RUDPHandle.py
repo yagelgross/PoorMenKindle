@@ -7,7 +7,6 @@ def divideChapter(book_name: str, chapter_content: str, chapter_index: int) -> l
     for i in range(total): # create the chunks
         start = i * most_chars
         end = start + most_chars
-        chunk = chapter_content[start:end]
 
         # CHUNK | BookName | ChapterNum | TotalChunks | CurrentChunkIndex | Text
         packet = f"CHUNK|{book_name}|{chapter_index}|{total}|{i}|{chapter_content[start:end]}" # pack the chunk into a packet
@@ -24,7 +23,7 @@ class ChapterAssembler:
         self.book_name = ""
         self.chapter_index = -1
 
-    def receive_chunk(self, packet_string: str) -> str | None:
+    def receive_chunk(self, packet_string: str) -> tuple[int, str] | None:
         """Receive a chunk of a chapter and return (chapter_index, assembled_text) if complete. Otherwise, return None."""
         parts = packet_string.split('|', 5)
         if parts[0] != "CHUNK":

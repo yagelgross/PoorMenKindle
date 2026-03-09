@@ -49,6 +49,8 @@ class NetworkManager:
         # --- Synchronization for RUDP ---
         self.server_response_payload = ""
         self.server_response_event = threading.Event()
+        self.book_list_buffer = []
+        self.streaming = False
 
     def TCP_connect(self) -> bool:
         """ Establish a stable and persistent TCP connection to the server."""
@@ -70,18 +72,18 @@ class NetworkManager:
     def TCP_login(self, username: str, password: str) -> str:
         #Send login credentials. Returns 'SUCCESS' or 'FAIL'.
         packet = (f"{protocol.MSG_LOGIN}{protocol.SEPARATOR}"
-                  f"{util.ceasar_cipher(username, 7)}{protocol.SEPARATOR}"
-                  f"{util.ceasar_cipher(password, 7)}")
+                  f"{util.ceasar_cipher(username, protocol.LOGIN_SHIFT)}{protocol.SEPARATOR}"
+                  f"{util.ceasar_cipher(password, protocol.LOGIN_SHIFT)}")
         protocol.send_message(self.sock, packet)
         response = protocol.recv_message(self.sock)
-        return util.ceasar_decipher(response, 4)
+        return util.ceasar_decipher(response, protocol.RESPONSE_SHIFT)
 
     def RUDP_login(self, username: str, password: str) -> str:
         """ Creates and sends a RUDP login packet securely using the listen loop. """
         # preparing the payload for the RUDP packet
         payload = (f"{protocol.MSG_LOGIN}{protocol.SEPARATOR}"
-                   f"{util.ceasar_cipher(username, 7)}{protocol.SEPARATOR}"
-                   f"{util.ceasar_cipher(password, 7)}")
+                   f"{util.ceasar_cipher(username, protocol.LOGIN_SHIFT)}{protocol.SEPARATOR}"
+                   f"{util.ceasar_cipher(password, protocol.LOGIN_SHIFT)}")
         # packing the RUDP packet (header + payload)
         packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA, payload=payload)
 
@@ -97,7 +99,7 @@ class NetworkManager:
             # wait for the main loop to catch the response and set the event
             if self.server_response_event.wait(timeout=2.0):
                 # decipher the response
-                return util.ceasar_decipher(self.server_response_payload, 4)
+                return util.ceasar_decipher(self.server_response_payload, protocol.RESPONSE_SHIFT)
 
             print(f"Login attempt {attempt + 1} timed out. Retrying...")
 
@@ -128,6 +130,7 @@ class NetworkManager:
             print(f"Book '{book_title}' has {self.total_chapters} chapters.")
 
             # Start background prefetch
+            self.streaming = True #we have begun reading a book
             self._running = True
             self._prefetch_thread = threading.Thread(target=self._TCP_prefetch_loop, daemon=True)
             self._prefetch_thread.start()
@@ -163,6 +166,7 @@ class NetworkManager:
                     print(f"Book '{book_title}' has {self.total_chapters} chapters.")
 
                     # Start background prefetch
+                    self.streaming = True #we have begun reading a book
                     self._running = True
                     self._prefetch_thread = threading.Thread(target=self._rudp_prefetch_loop, daemon=True)
                     self._prefetch_thread.start()
@@ -183,7 +187,7 @@ class NetworkManager:
         while self._running:
             try:
                 # receiving a UDP packet
-                data, addr = self.sock.recvfrom(4096)
+                data, addr = self.sock.recvfrom(65536)
             except (socket.timeout, BlockingIOError):
                 continue  # normal behavior, keep listening
             except Exception as e:
@@ -218,13 +222,16 @@ class NetworkManager:
                             if self.on_chapter_ready:
                                 self.on_chapter_ready(chap_idx)
                     else:
-                        # if it's not a chunk, it's LOGIN SUCCESS or BOOK_META!
-                        # save the payload and wake up the waiting function.
-                        self.server_response_payload = payload
-                        self.server_response_event.set()
+                    # catch book list items separately
+                        if payload.startswith(protocol.MSG_BOOK_LIST_ITEM):
+                            self.book_list_buffer.append(payload)
+                        else:
+                            # if it's not a chunk or a list item, it's LOGIN SUCCESS, BOOK_META, or BOOK_LIST header
+                            self.server_response_payload = payload
+                            self.server_response_event.set()
 
-                        if payload == protocol.MSG_END_OF_BOOK:
-                            self.book_finished = True
+                            if payload == protocol.MSG_END_OF_BOOK:
+                                self.book_finished = True
 
             except Exception as e:
                 print(f"Packet processing error: {e}")
@@ -241,7 +248,7 @@ class NetworkManager:
                 all_requested = self.next_server_index >= self.total_chapters
 
             if all_requested:
-                # We've requested everything, wait for user to finish
+                # We've requested everything, wait for the user to finish
                 threading.Event().wait(timeout=0.1)
                 continue
 
@@ -366,3 +373,172 @@ class NetworkManager:
             return self.TCP_request_book(book_title)
         else:
             return self.RUDP_request_book(book_title)
+
+    # ==================== READING PROGRESS & CONTROL ====================
+
+    def stop_prefetch(self):
+        """ stop the prefetch thread without killing the rudp listen loop """
+        # we use book_finished to stop the prefetch loop instead of _running
+        self.book_finished = True
+
+        if self._prefetch_thread:
+            self._prefetch_thread.join(timeout=1.0)
+            self._prefetch_thread = None
+
+    def save_progress(self, book_title: str, chapter_index: int):
+        """ Tell the server to save reading progress for the current user. (Fire and forget) """
+        if self.type == "TCP":
+            msg = f"{protocol.MSG_SAVE_PROGRESS}{protocol.SEPARATOR}{book_title}{protocol.SEPARATOR}{chapter_index}"
+            try:
+                protocol.send_message(self.sock, msg)
+            except Exception:
+                pass
+        else:
+            payload = f"{protocol.MSG_SAVE_PROGRESS}{protocol.SEPARATOR}{book_title}{protocol.SEPARATOR}{chapter_index}"
+            packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA,
+                                                    payload=payload)
+            try:
+                self.sock.sendto(packet, self.server_addr)
+            except Exception:
+                pass
+
+    def get_progress(self, book_title: str) -> int:
+        """ Ask the server for the user's saved progress on a book. """
+        if self.type == "TCP":
+            msg = f"{protocol.MSG_GET_PROGRESS}{protocol.SEPARATOR}{book_title}"
+            protocol.send_message(self.sock, msg)
+            response = protocol.recv_message(self.sock)
+            parts = response.split(protocol.SEPARATOR)
+            if parts[0] == protocol.MSG_PROGRESS and len(parts) >= 2:
+                return int(parts[1])
+            return -1
+        else:
+            payload = f"{protocol.MSG_GET_PROGRESS}{protocol.SEPARATOR}{book_title}"
+            packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA,
+                                                    payload=payload)
+            for _ in range(3):
+                self.server_response_event.clear()
+                self.sock.sendto(packet, self.server_addr)
+                if self.server_response_event.wait(timeout=2.0):
+                    parts = self.server_response_payload.split(protocol.SEPARATOR)
+                    if parts[0] == protocol.MSG_PROGRESS and len(parts) >= 2:
+                        return int(parts[1])
+            return -1
+
+    def stop_reading(self):
+        """ Tell the server to stop the chapter-streaming loop. """
+        # Prevent deadlock: DON'T try to stop a stream if we aren't streaming!
+        if not getattr(self, 'streaming', False):
+            return
+
+        self.book_finished = True
+        self.streaming = False
+        self.stop_prefetch()
+
+        if self.type == "TCP" and self.sock:
+            try:
+                protocol.send_message(self.sock, protocol.MSG_STOP_READING)
+                # Set a temporary timeout so it doesn't freeze forever if the server is quiet
+                self.sock.settimeout(2.0)
+                for _ in range(50):
+                    resp = protocol.recv_message(self.sock)
+                    if not resp or resp.startswith(protocol.MSG_END_OF_BOOK):
+                        break
+                self.sock.settimeout(None)  # Restore normal blocking mode
+            except Exception:
+                if self.sock:
+                    self.sock.settimeout(None)
+
+        elif self.type == "RUDP" and self.sock:
+            packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA,
+                                                payload=protocol.MSG_STOP_READING)
+            try:
+                self.sock.sendto(packet, self.server_addr)
+            except Exception:
+                pass
+
+    def get_last_book(self) -> tuple[str, int] | None:
+        """ Ask the server for the last book this user was reading. """
+        if self.type == "TCP":
+            protocol.send_message(self.sock, protocol.MSG_GET_LAST_BOOK)
+            response = protocol.recv_message(self.sock)
+            parts = response.split(protocol.SEPARATOR)
+            if parts[0] == protocol.MSG_LAST_BOOK:
+                if len(parts) >= 3 and parts[1] != "NONE":
+                    return parts[1], int(parts[2])
+            return None
+        else:
+            packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA,
+                                                payload=protocol.MSG_GET_LAST_BOOK)
+            for _ in range(3):
+                self.server_response_event.clear()
+                self.sock.sendto(packet, self.server_addr)
+                if self.server_response_event.wait(timeout=2.0):
+                    parts = self.server_response_payload.split(protocol.SEPARATOR)
+                    if parts[0] == protocol.MSG_LAST_BOOK:
+                        # Return None immediately if we received NONE, don't keep waiting!
+                        if len(parts) >= 3 and parts[1] != "NONE":
+                            return parts[1], int(parts[2])
+                        return None
+            return None
+
+    # ==================== BOOK LIST ====================
+    def request_book_list(self) -> list[dict]:
+        """ Request the list of available books from the server. """
+        if self.type == "TCP":
+            protocol.send_message(self.sock, protocol.MSG_REQUEST_BOOK_LIST)
+            response = protocol.recv_message(self.sock)
+            parts = response.split(protocol.SEPARATOR, 1)
+
+            if parts[0] != protocol.MSG_BOOK_LIST:
+                return []
+
+            count = int(parts[1])
+            books = []
+            for _ in range(count):
+                item = protocol.recv_message(self.sock)
+                item_parts = item.split(protocol.SEPARATOR, 4)
+                if item_parts[0] == protocol.MSG_BOOK_LIST_ITEM:
+                    books.append({
+                        "title": item_parts[1],
+                        "author": item_parts[2],
+                        "chapters": int(item_parts[3]),
+                        "cover": item_parts[4] if len(item_parts) > 4 else ""
+                    })
+            return books
+        else:
+            packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA,
+                                                payload=protocol.MSG_REQUEST_BOOK_LIST)
+
+            for attempt in range(3):
+                self.book_list_buffer.clear()  # <--- Clear buffer INSIDE the retry loop!
+                self.server_response_event.clear()
+                self.sock.sendto(packet, self.server_addr)
+
+                # slightly longer wait to allow all packets to arrive
+                if self.server_response_event.wait(timeout=3.0):
+                    parts = self.server_response_payload.split(protocol.SEPARATOR, 1)
+                    if parts[0] == protocol.MSG_BOOK_LIST:
+                        # get the number of books the server is about to send
+                        expected_count = int(parts[1])
+
+                        # wait dynamically for all books to arrive
+                        timeout_counter = 0
+                        while len(
+                                self.book_list_buffer) < expected_count and timeout_counter < 40:  # max 4 seconds wait
+                            import time
+                            time.sleep(0.1)
+                            timeout_counter += 1
+
+                        books = []
+                        for item in self.book_list_buffer:
+                            item_parts = item.split(protocol.SEPARATOR, 4)
+                            if item_parts[0] == protocol.MSG_BOOK_LIST_ITEM:
+                                books.append({
+                                    "title": item_parts[1],
+                                    "author": item_parts[2],
+                                    "chapters": int(item_parts[3]),
+                                    "cover": item_parts[4] if len(item_parts) > 4 else ""
+                                })
+                        return books
+            return []

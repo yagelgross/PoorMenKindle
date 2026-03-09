@@ -5,7 +5,8 @@ import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
 from PIL import Image, ImageTk
-
+import io
+import base64
 import Server
 import util
 
@@ -282,6 +283,7 @@ class StartPage(tk.Frame):
 
 
 class RequestPage(tk.Frame):
+
     def __init__(self, parent, controller):
         super().__init__(parent, bg="seagreen3")
         self.controller = controller
@@ -289,54 +291,113 @@ class RequestPage(tk.Frame):
         label = tk.Label(self, text="Request Page", font=("Arial", 25), bg="seagreen3")
         label.pack(pady=30)
 
-        # Book data: (title, image_path)
-        self.books = [
-            ("Eragon", "booksForServer/covers/Eragon.jpg"),
-            ("Eldest", "booksForServer/covers/Eldest.png"),
-            ("Brisingr", "booksForServer/covers/Brisingr.png"),
-            ("Inheritance", "booksForServer/covers/Inheritance.jpg"),
-        ]
+        # Continue Reading section (hidden by default)
+        self.continue_frame = tk.Frame(self, bg="lightgreen", bd=2, relief="groove")
+        self.continue_label = tk.Label(self.continue_frame, text="📖 Continue Reading", font=("Arial", 14, "bold"),
+                                       bg="lightgreen")
+        self.continue_book_info = tk.Label(self.continue_frame, text="", font=("Arial", 12, "italic"), bg="lightgreen")
+        self.continue_btn = tk.Button(self.continue_frame, text="▶ Resume Reading", bg="cyan",
+                                      font=("Arial", 12, "bold"))
 
-        self.photos = []
-        gallery_frame = tk.Frame(self, bg="seagreen3")
-        gallery_frame.pack(pady=20)
+        self.continue_label.pack(pady=5)
+        self.continue_book_info.pack(pady=5)
+        self.continue_btn.pack(pady=10)
 
-        for i, (title, img_path) in enumerate(self.books):
+        self.status_label = tk.Label(self, text="Loading books from server...", bg="seagreen3",
+                                     font=("Arial", 12, "italic"))
+        self.status_label.pack(pady=10)
+
+        self.gallery_frame = tk.Frame(self, bg="seagreen3")
+        self.gallery_frame.pack(pady=20)
+        self.photos = []  # store images in memory to prevent garbage collection
+
+        tk.Button(self, text="Back to Home", font=("Arial", 12),
+                  command=lambda: controller.show_frame("StartPage")).pack(pady=30)
+
+    def tkraise(self, *args, **kwargs):
+        """ Called automatically when the screen is shown. Refreshes the list (like refreshBookList in Java). """
+        super().tkraise(*args, **kwargs)
+        self.refresh_book_list()
+
+    def refresh_book_list(self):
+        # clear previous screen
+        for widget in self.gallery_frame.winfo_children():
+            widget.destroy()
+        self.continue_frame.pack_forget()
+        self.status_label.config(text="Loading books from server...")
+        self.photos.clear()
+
+        net = self.controller.net_manager
+
+        def fetch_data():
+            net.stop_reading()  # stop previous reading (like in Java)
+            last_book = net.get_last_book()
+            books = net.request_book_list()
+
+            # update the GUI from the background thread
+            self.after(0, lambda: self._update_ui(last_book, books))
+
+        threading.Thread(target=fetch_data, daemon=True).start()
+
+    def _update_ui(self, last_book, books):
+        # handle the Continue Reading button
+        if last_book and last_book[0] != "NONE":
+            title, chapter = last_book[0], last_book[1]
+            self.continue_book_info.config(text=f"\"{title}\" — Chapter {chapter + 1}")
+            self.continue_btn.config(command=lambda: self.request_book(title))
+            self.continue_frame.pack(pady=10, before=self.status_label)
+
+        if not books:
+            self.status_label.config(text="No books available on the server.")
+            return
+
+        self.status_label.config(text="")
+
+        # create a book gallery from received data
+        for i, book in enumerate(books):
             try:
-                img = Image.open(img_path).resize((100, 130))
+                # decode image from Base64
+                img_data = base64.b64decode(book['cover'])
+                img = Image.open(io.BytesIO(img_data)).resize((100, 130))
                 photo = ImageTk.PhotoImage(img)
                 self.photos.append(photo)
 
-                btn = tk.Button(gallery_frame, image=photo, bd=0, cursor="hand2",
-                                command=lambda t=title: self.request_book(t))
+                btn = tk.Button(self.gallery_frame, image=photo, bd=0, cursor="hand2",
+                                command=lambda t=book['title']: self.request_book(t))
+                btn.grid(row=0, column=i, padx=15, pady=15)
+            except Exception:
+                # text button if there is no image
+                btn = tk.Button(self.gallery_frame, text=book['title'], width=12, height=6, cursor="hand2",
+                                command=lambda t=book['title']: self.request_book(t))
                 btn.grid(row=0, column=i, padx=15, pady=15)
 
-                lbl = tk.Label(gallery_frame, text=title, bg="seagreen3",
-                               font=("Arial", 10, "bold"))
-                lbl.grid(row=1, column=i)
-            except Exception as e:
-                print(f"Error loading image for {title}: {e}")
-
-        back_btn = tk.Button(self, text="Back to Home", font=("Arial", 12),
-                             command=lambda: controller.show_frame("StartPage"))
-        back_btn.pack(pady=30)
+            tk.Label(self.gallery_frame, text=book['title'], bg="seagreen3", font=("Arial", 10, "bold")).grid(row=1,
+                                                                                                              column=i)
 
     def request_book(self, book_title):
         """Called when user clicks a book cover."""
-        net_manager = self.controller.net_manager  # stored on the app controller
+        net_manager = self.controller.net_manager
 
         def do_request():
-            # calling the get_book method of the NetManager class
+            net_manager.stop_reading()
+
+            # get the last read chapter before starting the streaming
+            saved_chapter = net_manager.get_progress(book_title)
+            if saved_chapter < 0:
+                saved_chapter = 0
+
+            # request the book from the server
             success = net_manager.request_book(book_title)
+
             if success:
+                # pass the progress to ReadPage
                 read_page = self.controller.frames["ReadPage"]
-                read_page.start_reading(net_manager)
+                read_page.start_reading(net_manager, saved_chapter)
                 self.controller.show_frame("ReadPage")
             else:
                 import tkinter.messagebox
                 tkinter.messagebox.showerror("Error", f"Could not load '{book_title}'")
 
-        # Start the request in a separate thread
         threading.Thread(target=do_request, daemon=True).start()
 
 class ReadPage(tk.Frame):
@@ -427,8 +488,11 @@ class ReadPage(tk.Frame):
         # --- Footer Controls ---
         controls_frame = tk.Frame(self)
         controls_frame.pack(pady=5)
+
+        # update the home button command to use self.go_home instead of a lambda
         tk.Button(controls_frame, text="Home",
-                  command=lambda: controller.show_frame("StartPage")).pack(side="left", padx=5)
+                  command=self.go_home).pack(side="left", padx=5)
+
         tk.Button(controls_frame, text="📂 Load EPUB",
                   command=self.load_epub).pack(side="left", padx=5)
 
@@ -437,18 +501,20 @@ class ReadPage(tk.Frame):
 
         self.apply_theme()
 
-    def start_reading(self, net_manager):
+
+    def start_reading(self, net_manager, start_chapter=0):
         """Called when a book is successfully requested from the server."""
         self.reading_mode = "server"
         self.net_manager = net_manager
-        self.current_page_index = 0
+        # set the current page to the saved progress instead of 0
+        self.current_page_index = start_chapter
         self.total_chapters = net_manager.total_chapters
         self.is_hebrew = self._contains_hebrew(net_manager.book_title)
-
+        # notify the network manager so the prefetch loop knows we jumped ahead
+        self.net_manager.notify_user_advanced(self.current_page_index)
         # Set callback: when a chapter arrives, refresh if needed
         net_manager.on_chapter_ready = self._on_chapter_ready
-
-        # Wait briefly for first chapter, then display
+        # Wait briefly for the first chapter, then display
         self.after(100, self._try_display_current)
 
     def _on_chapter_ready(self, chapter_index: int):
@@ -496,12 +562,25 @@ class ReadPage(tk.Frame):
         buffered = self.net_manager.next_server_index - self.current_page_index
         self.loading_label.config(text=f"📦 {buffered} chapter(s) buffered ahead")
 
+    def _save_current_progress(self):
+        """ save the user's progress to the server """
+        if self.reading_mode == "server" and self.net_manager and self.net_manager.book_title:
+            self.net_manager.save_progress(self.net_manager.book_title, self.current_page_index)
+
+    def go_home(self):
+        """ stop reading, save progress, and go back to the start page """
+        if self.reading_mode == "server" and self.net_manager:
+            self._save_current_progress()
+            self.net_manager.stop_reading()
+        self.controller.show_frame("StartPage")
+
     def next_page(self):
         """Advance to the next page/chapter (works for both server and local modes)."""
         if self.reading_mode == "server":
             if self.current_page_index < self.total_chapters - 1:
                 self.current_page_index += 1
                 self.net_manager.notify_user_advanced(self.current_page_index)
+                self._save_current_progress() # <--- update server
                 self._try_display_current()
         elif self.reading_mode == "local":
             if self.current_page_index < len(self.pages) - 1:
@@ -514,10 +593,10 @@ class ReadPage(tk.Frame):
             self.current_page_index -= 1
             if self.reading_mode == "server":
                 self.net_manager.notify_user_advanced(self.current_page_index)
+                self._save_current_progress() # <--- update server
                 self._try_display_current()
             elif self.reading_mode == "local":
                 self.update_page()
-
     # --- HELPER: Update the Title Tag Style ---
     def update_title_style(self):
         """

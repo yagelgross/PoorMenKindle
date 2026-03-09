@@ -67,7 +67,7 @@ def startdns():
         qtype = req.q.qtype
         qclass = req.q.qclass
         key = (qname, qtype, qclass)
-        if(key in cache):
+        if key in cache:
             cached_bytes = cache[key]["resp"]
             age = time.time() - cache[key]["added_at"]
             cached = DNSRecord.parse(cached_bytes)

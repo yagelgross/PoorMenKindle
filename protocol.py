@@ -6,7 +6,6 @@ Large messages (chapters): use length-prefixed framing.
 """
 import struct
 
-from rdflib.parser import headers
 
 # --- Message Types ---
 MSG_LOGIN = "LOGIN"
@@ -36,6 +35,10 @@ MSG_LAST_BOOK = "LAST_BOOK"
 SEPARATOR = "|"
 ENCODING = "utf-8"
 HEADER_SIZE = 10  # 10-digit length header for framing
+
+# Caesar cipher shifts
+LOGIN_SHIFT = 7
+RESPONSE_SHIFT = 4
 
 # RUDP headers
 RUDP_HEADER_FORMAT = "!IIB"

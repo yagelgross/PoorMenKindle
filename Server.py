@@ -2,6 +2,8 @@ import base64
 import os
 import socket
 import threading
+from PIL import Image
+import io
 
 import ebooklib
 from ebooklib import epub
@@ -99,32 +101,48 @@ def udp_retransmission_loop(server_socket: socket.socket):
 
 def process_udp_request(server_socket: socket.socket, addr: tuple, payload: str):
     """
-    The business side of the server. Handles login, book requests, and chapter streaming similarly to TCP, but
-    using RUDP instead.
+    The business side of the server. Handles login, book requests, book lists, and progress over RUDP.
     """
     parts = payload.split(protocol.SEPARATOR)
     msg_type = parts[0]
 
     # --- LOGIN ---
     if msg_type == protocol.MSG_LOGIN and len(parts) == 3:
-        username = util.ceasar_decipher(parts[1], 7)
-        password = util.ceasar_decipher(parts[2], 7)
+        username = util.ceasar_decipher(parts[1], protocol.LOGIN_SHIFT)
+        password = util.ceasar_decipher(parts[2], protocol.LOGIN_SHIFT)
 
         if validate_user(username, password):
-            send_rudp_reliable(server_socket, addr, util.ceasar_cipher("SUCCESS", 4))
+            send_rudp_reliable(server_socket, addr, util.ceasar_cipher("SUCCESS", protocol.RESPONSE_SHIFT))
             udp_client_state[addr] = {'username': username, 'authenticated': True}
             print(f"[RUDP Server] User '{username}' authenticated from {addr}.")
         else:
-            send_rudp_reliable(server_socket, addr, util.ceasar_cipher("FAIL", 4))
+            send_rudp_reliable(server_socket, addr, util.ceasar_cipher("FAIL", protocol.RESPONSE_SHIFT))
+        return  # return here so it doesn't execute the rest of the function on login
 
     # block all other requests from unauthenticated clients
     if addr not in udp_client_state or not udp_client_state[addr].get('authenticated'):
         return
 
     state = udp_client_state[addr]
+    username = state['username']
+
+    # --- BOOK LIST ---
+    if msg_type == protocol.MSG_REQUEST_BOOK_LIST:
+        # send header: BOOK_LIST|count
+        send_rudp_reliable(server_socket, addr, f"{protocol.MSG_BOOK_LIST}{protocol.SEPARATOR}{len(availableBooks)}")
+        # send one BOOK_LIST_ITEM per book
+        for book in availableBooks:
+            cover_b64 = get_cover_base64(book)
+            item = (f"{protocol.MSG_BOOK_LIST_ITEM}"
+                    f"{protocol.SEPARATOR}{book.title}"
+                    f"{protocol.SEPARATOR}{book.author}"
+                    f"{protocol.SEPARATOR}{book.chapterCount}"
+                    f"{protocol.SEPARATOR}{cover_b64}")
+            send_rudp_reliable(server_socket, addr, item)
+        print(f"[RUDP Server] Sent book list ({len(availableBooks)} books) to {addr}")
 
     # --- REQUEST BOOK ---
-    if msg_type == protocol.MSG_REQUEST_BOOK and len(parts) == 2:
+    elif msg_type == protocol.MSG_REQUEST_BOOK and len(parts) == 2:
         book_title = parts[1]
         chapters = epub_handler(book_title)
 
@@ -153,7 +171,6 @@ def process_udp_request(server_socket: socket.socket, addr: tuple, payload: str)
             return
 
         # anti-spam mechanism: if we just sent this chapter, don't re-chunk and re-send it all at once.
-        # the retransmission loop will handle the lost chunks!
         last_sent = state.get('last_sent_chapter', -1)
         if last_sent == req_index:
             return
@@ -163,7 +180,7 @@ def process_udp_request(server_socket: socket.socket, addr: tuple, payload: str)
         if chapters and req_index < len(chapters):
             chapter_text = chapters[req_index]
 
-            # chunk up the chapter text into smaller chunks to fit in a single RUDP packet and transmit it
+            # chunk up the chapter text
             most_chars = 500
             total_chunks = (len(chapter_text) + most_chars - 1) // most_chars
 
@@ -171,17 +188,46 @@ def process_udp_request(server_socket: socket.socket, addr: tuple, payload: str)
                 start = i * most_chars
                 end = start + most_chars
                 chunk_payload = f"CHUNK|{book_title}|{req_index}|{total_chunks}|{i}|{chapter_text[start:end]}"
-                # send each chunk as a separate RUDP packet
                 send_rudp_reliable(server_socket, addr, chunk_payload)
 
             print(f"[RUDP Server] Sent chapter {req_index} ({total_chunks} chunks) to {addr}")
 
-            # promote the client to the next chapter and save the last sent chapter
             state['chapter_index'] = req_index + 1
             state['last_sent_chapter'] = req_index
 
         elif chapters and req_index >= len(chapters):
             send_rudp_reliable(server_socket, addr, protocol.MSG_END_OF_BOOK)
+
+    # --- SAVE PROGRESS ---
+    elif msg_type == protocol.MSG_SAVE_PROGRESS and len(parts) == 3:
+        book_title = parts[1]
+        chapter = int(parts[2])
+
+        # find the client object
+        client_obj = next((c for c in AllClients if c.getUserName() == username), None)
+        if client_obj:
+            client_obj.setCurrChapter(book_title, chapter)
+            print(f"[RUDP Server] Saved progress: {username} -> {book_title} ch.{chapter}")
+
+    # --- GET PROGRESS ---
+    elif msg_type == protocol.MSG_GET_PROGRESS and len(parts) == 2:
+        book_title = parts[1]
+        client_obj = next((c for c in AllClients if c.getUserName() == username), None)
+        chapter = -1
+        if client_obj:
+            chapter = client_obj.getCurrChapter(book_title)
+        send_rudp_reliable(server_socket, addr, f"{protocol.MSG_PROGRESS}{protocol.SEPARATOR}{chapter}")
+
+    # --- GET LAST BOOK ---
+    elif msg_type == protocol.MSG_GET_LAST_BOOK:
+        client_obj = next((c for c in AllClients if c.getUserName() == username), None)
+        if client_obj and client_obj.lastBookRead:
+            title = client_obj.lastBookRead
+            chapter = client_obj.getCurrChapter(title)
+            send_rudp_reliable(server_socket, addr,
+                               f"{protocol.MSG_LAST_BOOK}{protocol.SEPARATOR}{title}{protocol.SEPARATOR}{chapter}")
+        else:
+            send_rudp_reliable(server_socket, addr, f"{protocol.MSG_LAST_BOOK}{protocol.SEPARATOR}NONE")
 
 
 def start_UDP_server():
@@ -224,10 +270,24 @@ def start_UDP_server():
 
 # TCP server logistics and functions
 def get_cover_base64(book: Book.Book) -> str:
-    #Read a book's cover image and return it as a base64 string, or '' if none.
+    """ Read a book's cover image, resize it to a lightweight thumbnail, and return as base64. """
     if book.coverPath and os.path.exists(book.coverPath):
-        with open(book.coverPath, "rb") as f:
-            return base64.b64encode(f.read()).decode("ascii")
+        try:
+            with Image.open(book.coverPath) as img:
+                # resize to thumbnail to save massive amounts of UDP bandwidth
+                img.thumbnail((100, 130))
+
+                # convert to RGB (removes alpha channel if it's a PNG) to allow JPEG compression
+                if img.mode != 'RGB':
+                    img = img.convert('RGB')
+
+                buffer = io.BytesIO()
+                # compress heavily into JPEG format
+                img.save(buffer, format="JPEG", quality=70)
+
+                return base64.b64encode(buffer.getvalue()).decode("ascii")
+        except Exception as e:
+            print(f"Error processing cover for {book.title}: {e}")
     return ""
 
 
@@ -279,11 +339,11 @@ def handle_TCP_client(conn: socket.socket, addr):
 
             # ─── LOGIN ───
             if msg_type == protocol.MSG_LOGIN and len(parts) == 3:
-                username = util.ceasar_decipher(parts[1], 7)
-                password = util.ceasar_decipher(parts[2], 7)
+                username = util.ceasar_decipher(parts[1], protocol.LOGIN_SHIFT)
+                password = util.ceasar_decipher(parts[2], protocol.LOGIN_SHIFT)
 
                 if validate_user(username, password):
-                    protocol.send_message(conn, util.ceasar_cipher("SUCCESS", 4))
+                    protocol.send_message(conn, util.ceasar_cipher("SUCCESS", protocol.RESPONSE_SHIFT))
                     authenticated = True
                     # Store reference to the authenticated Client object
                     for c in AllClients:
@@ -292,7 +352,7 @@ def handle_TCP_client(conn: socket.socket, addr):
                             break
                     print(f"User '{username}' authenticated.")
                 else:
-                    protocol.send_message(conn, util.ceasar_cipher("FAIL", 4))
+                    protocol.send_message(conn, util.ceasar_cipher("FAIL", protocol.RESPONSE_SHIFT))
 
             # ─── BOOK LIST ───
             elif msg_type == protocol.MSG_REQUEST_BOOK_LIST and authenticated:
