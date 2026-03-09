@@ -1,6 +1,9 @@
 import socket
 import Server
+import SimpleGui
 
 if __name__ == "__main__":
-    Server.start_TCP_server()
+    app = SimpleGui.BookWormApp()
+    app.mainloop()
+
 

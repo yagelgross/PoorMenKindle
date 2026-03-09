@@ -42,10 +42,16 @@ class ChapterAssembler:
             self.chapter_index = req_chap_idx
             self.total_chunks_expected = total_chunks
 
-        # block chunks from other books or chapters
+        # block chunks from other books or chapters, but adapt if the server moved to a newer chapter
         if self.book_name != req_book_name or self.chapter_index != req_chap_idx:
-            print(f"Ignored chunk from different chapter: {req_book_name} ch.{req_chap_idx}")
-            return None
+            # if the server moved on to a NEWER chapter from the same book, clear the old buffers and adapt!
+            if self.book_name == req_book_name and req_chap_idx > self.chapter_index:
+                print(f"Moving to new chapter {req_chap_idx}, dropping old chunks from ch.{self.chapter_index}")
+                self.chunks_received.clear()
+                self.chapter_index = req_chap_idx
+                self.total_chunks_expected = total_chunks
+            else:
+                return None
 
         # if we haven't received this chunk yet, store it
         if chunk_idx not in self.chunks_received:

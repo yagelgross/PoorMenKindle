@@ -292,18 +292,19 @@ class NetworkManager:
                 continue
 
             if need_more:
-                # request the next chapter from the server
-                payload = protocol.MSG_NEXT_CHAPTER
-                packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA, payload=payload)
+                # request the specific next chapter from the server
+                payload = f"{protocol.MSG_NEXT_CHAPTER}{protocol.SEPARATOR}{self.next_server_index}"
+                packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA,
+                                                    payload=payload)
                 self.sock.sendto(packet, self.server_addr)
 
                 # save the current index for comparison
                 expected_index = self.next_server_index
 
                 # wait for the server to send the next chapter.
-                # there is a timeout to prevent infinite loops if the server is not responding.
+                # increased timeout to prevent spamming the server if UDP is slow
                 timeout_counter = 0
-                max_wait_cycles = 20  # max 2 seconds of waiting
+                max_wait_cycles = 50  # max 5 seconds of waiting
 
                 while self._running and self.next_server_index == expected_index and timeout_counter < max_wait_cycles:
                     threading.Event().wait(timeout=0.1)
@@ -313,7 +314,7 @@ class NetworkManager:
                     # everything is good, update the buffer
                     pass
                 else:
-                    print("[RUDP] Timeout waiting for chapter assembly. Re-requesting...")
+                    print(f"[RUDP] Timeout waiting for chapter {expected_index}. Re-requesting...")
             else:
                 # full buffer, wait a bit before checking again
                 threading.Event().wait(timeout=0.1)

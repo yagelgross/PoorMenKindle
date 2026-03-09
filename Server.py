@@ -142,15 +142,26 @@ def process_udp_request(server_socket: socket.socket, addr: tuple, payload: str)
     # --- NEXT CHAPTER ---
     elif msg_type == protocol.MSG_NEXT_CHAPTER:
         book_title = state.get('current_book')
-        chapter_index = state.get('chapter_index', 0)
+
+        # extract the specific index requested by the client (if provided)
+        if len(parts) > 1:
+            req_index = int(parts[1])
+        else:
+            req_index = state.get('chapter_index', 0)
 
         if not book_title:
             return
 
+        # anti-spam mechanism: if we just sent this chapter, don't re-chunk and re-send it all at once.
+        # the retransmission loop will handle the lost chunks!
+        last_sent = state.get('last_sent_chapter', -1)
+        if last_sent == req_index:
+            return
+
         chapters = epub_handler(book_title)
 
-        if chapters and chapter_index < len(chapters):
-            chapter_text = chapters[chapter_index]
+        if chapters and req_index < len(chapters):
+            chapter_text = chapters[req_index]
 
             # chunk up the chapter text into smaller chunks to fit in a single RUDP packet and transmit it
             most_chars = 500
@@ -159,16 +170,17 @@ def process_udp_request(server_socket: socket.socket, addr: tuple, payload: str)
             for i in range(total_chunks):
                 start = i * most_chars
                 end = start + most_chars
-                chunk_payload = f"CHUNK|{book_title}|{chapter_index}|{total_chunks}|{i}|{chapter_text[start:end]}"
+                chunk_payload = f"CHUNK|{book_title}|{req_index}|{total_chunks}|{i}|{chapter_text[start:end]}"
                 # send each chunk as a separate RUDP packet
                 send_rudp_reliable(server_socket, addr, chunk_payload)
 
-            print(f"[RUDP Server] Sent chapter {chapter_index} ({total_chunks} chunks) to {addr}")
+            print(f"[RUDP Server] Sent chapter {req_index} ({total_chunks} chunks) to {addr}")
 
-            # promote the client to the next chapter
-            state['chapter_index'] += 1
+            # promote the client to the next chapter and save the last sent chapter
+            state['chapter_index'] = req_index + 1
+            state['last_sent_chapter'] = req_index
 
-        elif chapters and chapter_index >= len(chapters):
+        elif chapters and req_index >= len(chapters):
             send_rudp_reliable(server_socket, addr, protocol.MSG_END_OF_BOOK)
 
 
@@ -203,7 +215,7 @@ def start_UDP_server():
                                                         payload="")
                 server_socket.sendto(ack_packet, addr)
 
-                # niw we can handle the client's request without worrying about retransmissions, since we've acknowledged receipt of the packet
+                # now we can handle the client's request without worrying about retransmissions, since we've acknowledged receipt of the packet.
                 # we use a background thread to handle the request so that we can continue processing other requests
                 threading.Thread(target=process_udp_request, args=(server_socket, addr, payload), daemon=True).start()
 
@@ -419,9 +431,8 @@ def start_TCP_server():
 
 
 
-if __name__ == "__main__":
-    print("Starting BookWormHole Servers...")
-
+def start_server():
+    print("Starting servers...")
     # start a TCP server thread
     tcp_thread = threading.Thread(target=start_TCP_server, daemon=True)
     tcp_thread.start()
@@ -436,3 +447,6 @@ if __name__ == "__main__":
             time.sleep(1)
     except KeyboardInterrupt:
         print("Servers shutting down...")
+
+if __name__ == "__main__":
+    start_server()
