@@ -19,7 +19,7 @@ class BookWormApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("♣BookWormHole♣")
-        self.geometry('600x800')
+        self.geometry('700x800')
 
         # Persistent network manager (shared across pages)
         self.net_manager = NetworkManager(host='127.0.0.1', port=12347)
