@@ -1,7 +1,7 @@
 import dns.message
 import dns.query
 
-def test_local_dns(query_domain="youtube.com", server="127.0.0.1"):
+def test_local_dns(query_domain="books.server", server="127.0.0.1"):
     print(f"Testing DNS Server at {server} for domain: {query_domain}...")
 
     # 1. Create a standard DNS query message

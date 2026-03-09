@@ -7,13 +7,12 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageTk
 import io
 import base64
-import Server
-import util
-
 
 import tkinter as tk
 import threading
 from network_manager import NetworkManager
+import dns.message
+import dns.query
 
 class BookWormApp(tk.Tk):
     def __init__(self):
@@ -55,7 +54,7 @@ class LoginPage(tk.Frame):
         ip_label = tk.Label(self, text="Server IP:", font=("Arial", 12), bg="#eaddcf")
         ip_label.pack(pady=(5, 0))
         self.ip_entry = tk.Entry(self, font=("Arial", 12), width=25)
-        self.ip_entry.insert(0, "127.0.0.1")
+        self.ip_entry.insert(0, "books.server")
         self.ip_entry.pack(pady=5)
 
         # --- choose a protocol ---
@@ -91,16 +90,31 @@ class LoginPage(tk.Frame):
     def check_login(self):
         user = self.username_entry.get()
         password = self.password_entry.get()
-        server_ip = self.ip_entry.get().strip()
+        server_input = self.ip_entry.get().strip()
         selected_protocol = self.protocol_var.get()
 
         if not user or not password:
             self.error_label.config(text="Please fill in all fields!")
             return
 
-        if not server_ip:
+        if not server_input:
             self.error_label.config(text="Please enter the server IP address!")
             return
+
+        server_ip = server_input
+        if server_input.endswith(".server"):
+            try:
+                query = dns.message.make_query(server_input, dns.rdatatype.A)
+                response = dns.query.udp(query, "127.0.0.1", timeout=2)
+                if response.answer:
+                    server_ip = response.answer[0][0].to_text()
+                    print(f"Resolved [DNS] {server_input} to IP: {server_ip}")
+                else:
+                    self.error_label.config(text=f"Failed to resolve [DNS] {server_input}. Please check that the server is running.")
+                    return
+            except Exception as e:
+                self.error_label.config(text=f"DNS resolution failed for {server_input}: {e}")
+                return
 
         net = self.controller.net_manager
         net.host = server_ip

@@ -1,8 +1,10 @@
 import socket
-from dnslib import DNSRecord
+from dnslib import DNSRecord, RR, QTYPE, A
 import certifi
 import time
 import urllib3
+
+import DHCP
 
 DnsPort = 53
 
@@ -51,7 +53,7 @@ def startdns():
     pIndex+=1
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
-        sock.bind(("127.0.0.1", DnsPort))
+        sock.bind(("0.0.0.0", DnsPort))
         print(f"{pIndex}: DNS active on port {DnsPort}")
         pIndex += 1
     except PermissionError:
@@ -66,6 +68,16 @@ def startdns():
         qname = str(req.q.qname).rstrip(".")
         qtype = req.q.qtype
         qclass = req.q.qclass
+
+        if qname == "books.server" and qtype == QTYPE.A:
+            local_ip = DHCP.get_my_ip()
+            print(f"{pIndex}: Local resolve for {qname} -> {local_ip}")
+            pIndex += 1
+            reply = req.reply()
+            reply.add_answer(RR(qname, QTYPE.A, rdata=A(local_ip), ttl=60))
+            sock.sendto(reply.pack(), addr)
+            continue
+
         key = (qname, qtype, qclass)
         if key in cache:
             cached_bytes = cache[key]["resp"]
