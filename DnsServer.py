@@ -4,8 +4,6 @@ import certifi
 import time
 import urllib3
 
-import DHCP
-
 DnsPort = 53
 
 DOH_IP = "1.1.1.1"
@@ -77,42 +75,43 @@ def startdns():
             reply.add_answer(RR(qname, QTYPE.A, rdata=A(local_ip), ttl=60))
             sock.sendto(reply.pack(), addr)
             continue
-
-        key = (qname, qtype, qclass)
-        if key in cache:
-            cached_bytes = cache[key]["resp"]
-            age = time.time() - cache[key]["added_at"]
-            cached = DNSRecord.parse(cached_bytes)
+        else:
+            key = (qname, qtype, qclass)
+            if key in cache:
+                cached_bytes = cache[key]["resp"]
+                age = time.time() - cache[key]["added_at"]
+                cached = DNSRecord.parse(cached_bytes)
+                try:
+                    ttl = get_min_ttl(cached_bytes)
+                except Exception:
+                    ttl = 0
+                if ttl > 0 and age <= ttl:
+                    print(f"{pIndex}: Cache hit for {qname}")
+                    pIndex += 1
+                    cached.header.id = req.header.id
+                    cached.questions = list(req.questions)
+                    print(f"{pIndex}: Forward response")
+                    pIndex += 1
+                    sock.sendto(cached.pack(), addr)
+                    continue
+                else:
+                    del cache[key]
             try:
-                ttl = get_min_ttl(cached_bytes)
-            except Exception:
-                ttl = 0
-            if ttl > 0 and age <= ttl:
-                print(f"{pIndex}: Cache hit for {qname}")
-                pIndex += 1
-                cached.header.id = req.header.id
-                cached.questions = list(req.questions)
+                response = doh_forward(data,timeout=2.0)
+
+                ttl = get_min_ttl(response)
+                if ttl > 0:
+                    cache[key] = {"resp": response, "added_at": time.time()}
                 print(f"{pIndex}: Forward response")
                 pIndex += 1
-                sock.sendto(cached.pack(), addr)
-                continue
-            else:
-                del cache[key]
-        try:
-            response = doh_forward(data,timeout=2.0)
-
-            ttl = get_min_ttl(response)
-            if ttl > 0:
-                cache[key] = {"resp": response, "added_at": time.time()}
-            print(f"{pIndex}: Forward response")
-            pIndex += 1
-            sock.sendto(response, addr)
-        except socket.timeout:
-            print(f"{pIndex}: Timeout error")
-            pIndex += 1
-        except Exception as e:
-            print(f"{pIndex}: Error: {e}")
-            pIndex += 1
+                sock.sendto(response, addr)
+            except socket.timeout:
+                print(f"{pIndex}: Timeout error")
+                pIndex += 1
+            except Exception as e:
+                print(f"{pIndex}: Error: {e}")
+                pIndex += 1
 
 if __name__ == "__main__":
+    print(1)
     startdns()
