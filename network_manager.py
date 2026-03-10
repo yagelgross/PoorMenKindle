@@ -2,7 +2,6 @@ import socket
 import threading
 import protocol
 import util
-from collections import deque
 from RUDPHandle import ChapterAssembler
 
 
@@ -353,6 +352,7 @@ class NetworkManager:
         if self.sock:
             try:
                 self.sock.close()
+
             except Exception:
                 pass
 
@@ -525,7 +525,7 @@ class NetworkManager:
                         # wait dynamically for all books to arrive
                         timeout_counter = 0
                         while len(
-                                self.book_list_buffer) < expected_count and timeout_counter < 40:  # max 4 seconds wait
+                                self.book_list_buffer) < expected_count and timeout_counter < 40:  # max 4-second wait
                             import time
                             time.sleep(0.1)
                             timeout_counter += 1
