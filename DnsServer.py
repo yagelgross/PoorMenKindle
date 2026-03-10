@@ -43,6 +43,7 @@ def get_min_ttl(resp_bytes: bytes) -> int:
     if not reply.rr:
         return 0
     return min(rr.ttl for rr in reply.rr)
+
 def get_my_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
