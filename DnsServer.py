@@ -4,8 +4,6 @@ import certifi
 import time
 import urllib3
 
-import DHCP
-
 DnsPort = 53
 
 DOH_IP = "1.1.1.1"
