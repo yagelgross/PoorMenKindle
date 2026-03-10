@@ -108,15 +108,15 @@ def process_udp_request(server_socket: socket.socket, addr: tuple, payload: str)
 
     # --- LOGIN ---
     if msg_type == protocol.MSG_LOGIN and len(parts) == 3:
-        username = util.ceasar_decipher(parts[1], 7)
-        password = util.ceasar_decipher(parts[2], 7)
+        username = util.Caesar_decipher(parts[1], 7)
+        password = util.Caesar_decipher(parts[2], 7)
 
         if validate_user(username, password):
-            send_rudp_reliable(server_socket, addr, util.ceasar_cipher("SUCCESS", 4))
+            send_rudp_reliable(server_socket, addr, util.Caesar_cipher("SUCCESS", 4))
             udp_client_state[addr] = {'username': username, 'authenticated': True}
             print(f"[RUDP Server] User '{username}' authenticated from {addr}.")
         else:
-            send_rudp_reliable(server_socket, addr, util.ceasar_cipher("FAIL", 4))
+            send_rudp_reliable(server_socket, addr, util.Caesar_cipher("FAIL", 4))
         return  # return here so it doesn't execute the rest of the function on login
 
     # block all other requests from unauthenticated clients
@@ -339,11 +339,11 @@ def handle_TCP_client(conn: socket.socket, addr):
 
             # ─── LOGIN ───
             if msg_type == protocol.MSG_LOGIN and len(parts) == 3:
-                username = util.ceasar_decipher(parts[1], 7)
-                password = util.ceasar_decipher(parts[2], 7)
+                username = util.Caesar_decipher(parts[1], 7)
+                password = util.Caesar_decipher(parts[2], 7)
 
                 if validate_user(username, password):
-                    protocol.send_message(conn, util.ceasar_cipher("SUCCESS", 4))
+                    protocol.send_message(conn, util.Caesar_cipher("SUCCESS", 4))
                     authenticated = True
                     # Store reference to the authenticated Client object
                     for c in AllClients:
@@ -352,7 +352,7 @@ def handle_TCP_client(conn: socket.socket, addr):
                             break
                     print(f"User '{username}' authenticated.")
                 else:
-                    protocol.send_message(conn, util.ceasar_cipher("FAIL", 4))
+                    protocol.send_message(conn, util.Caesar_cipher("FAIL", 4))
 
             # ─── BOOK LIST ───
             elif msg_type == protocol.MSG_REQUEST_BOOK_LIST and authenticated:

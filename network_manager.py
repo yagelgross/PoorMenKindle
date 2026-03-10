@@ -72,18 +72,18 @@ class NetworkManager:
     def TCP_login(self, username: str, password: str) -> str:
         #Send login credentials. Returns 'SUCCESS' or 'FAIL'.
         packet = (f"{protocol.MSG_LOGIN}{protocol.SEPARATOR}"
-                  f"{util.ceasar_cipher(username, 7)}{protocol.SEPARATOR}"
-                  f"{util.ceasar_cipher(password, 7)}")
+                  f"{util.Caesar_cipher(username, 7)}{protocol.SEPARATOR}"
+                  f"{util.Caesar_cipher(password, 7)}")
         protocol.send_message(self.sock, packet)
         response = protocol.recv_message(self.sock)
-        return util.ceasar_decipher(response, 4)
+        return util.Caesar_decipher(response, 4)
 
     def RUDP_login(self, username: str, password: str) -> str:
         """ Creates and sends a RUDP login packet securely using the listen loop. """
         # preparing the payload for the RUDP packet
         payload = (f"{protocol.MSG_LOGIN}{protocol.SEPARATOR}"
-                   f"{util.ceasar_cipher(username, 7)}{protocol.SEPARATOR}"
-                   f"{util.ceasar_cipher(password, 7)}")
+                   f"{util.Caesar_cipher(username, 7)}{protocol.SEPARATOR}"
+                   f"{util.Caesar_cipher(password, 7)}")
         # packing the RUDP packet (header + payload)
         packet = protocol.build_rudp_packet(seq_num=0, ack_num=0, flags=protocol.RUDP_FLAG_DATA, payload=payload)
 
@@ -99,7 +99,7 @@ class NetworkManager:
             # wait for the main loop to catch the response and set the event
             if self.server_response_event.wait(timeout=2.0):
                 # decipher the response
-                return util.ceasar_decipher(self.server_response_payload, 4)
+                return util.Caesar_decipher(self.server_response_payload, 4)
 
             print(f"Login attempt {attempt + 1} timed out. Retrying...")
 

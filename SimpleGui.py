@@ -7,18 +7,19 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageTk
 import io
 import base64
-
 import tkinter as tk
 import threading
 from network_manager import NetworkManager
 import dns.message
 import dns.query
 
+
 class BookWormApp(tk.Tk):
+    """A class to represent the main application window for the client."""
     def __init__(self):
         super().__init__()
-        self.title("♣BookWormHole♣")
-        self.geometry('700x800')
+        self.title("♣BookWormHole♣") # the name of the app
+        self.geometry('700x800') # the size of the opened window at first
 
         # Persistent network manager (shared across pages)
         self.net_manager = NetworkManager(host='127.0.0.1', port=12347)
@@ -110,7 +111,8 @@ class LoginPage(tk.Frame):
                     server_ip = response.answer[0][0].to_text()
                     print(f"Resolved [DNS] {server_input} to IP: {server_ip}")
                 else:
-                    self.error_label.config(text=f"Failed to resolve [DNS] {server_input}. Please check that the server is running.")
+                    self.error_label.config(
+                        text=f"Failed to resolve [DNS] {server_input}. Please check that the server is running.")
                     return
             except Exception as e:
                 self.error_label.config(text=f"DNS resolution failed for {server_input}: {e}")
@@ -147,6 +149,7 @@ class LoginPage(tk.Frame):
             self.error_label.config(text="Invalid username or password!")
         else:
             self.error_label.config(text="Server error occurred.")
+
 
 def _create_card_button(parent, title_text, desc_text,
                         bg_color, hover_color, command):
@@ -190,14 +193,14 @@ def _create_card_button(parent, title_text, desc_text,
 
 class StartPage(tk.Frame):
     # Color palette matching the JavaFX gradient theme
-    BG_COLOR = "#b2ebf2"       # Mid-tone teal used as the flat fallback
-    ACCENT_DARK = "#00695c"    # Dark teal for title text
-    ACCENT_MID = "#004d40"     # Darker shade for subtitle
+    BG_COLOR = "#b2ebf2"  # Mid-tone teal used as the flat fallback
+    ACCENT_DARK = "#00695c"  # Dark teal for title text
+    ACCENT_MID = "#004d40"  # Darker shade for subtitle
     DIVIDER_COLOR = "#80cbc4"  # Soft teal for decorative elements
-    BTN1_BG = "#00897b"        # Request button background
-    BTN1_HOVER = "#00695c"     # Request button hover
-    BTN2_BG = "#0097a7"        # Read button background
-    BTN2_HOVER = "#00838f"     # Read button hover
+    BTN1_BG = "#00897b"  # Request button background
+    BTN1_HOVER = "#00695c"  # Request button hover
+    BTN2_BG = "#0097a7"  # Read button background
+    BTN2_HOVER = "#00838f"  # Read button hover
 
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -414,6 +417,7 @@ class RequestPage(tk.Frame):
 
         threading.Thread(target=do_request, daemon=True).start()
 
+
 class ReadPage(tk.Frame):
     def __init__(self, parent, controller):
         super().__init__(parent)
@@ -432,7 +436,8 @@ class ReadPage(tk.Frame):
         # List of available fonts for the menu
         self.available_fonts = ["Charter", "Hoefler Text", "Palatino", "Baskerville",
                                 "Georgia", "Times New Roman", "Avenir Next", "Helvetica Neue",
-                                "Verdana", "Arial", "Courier New", "New Peninim MT", "Comic sans", "Raanana", "Arial Hebrew"]
+                                "Verdana", "Arial", "Courier New", "New Peninim MT", "Comic sans", "Raanana",
+                                "Arial Hebrew"]
 
         # --- Themes Configuration ---
         self.themes = [
@@ -515,7 +520,6 @@ class ReadPage(tk.Frame):
 
         self.apply_theme()
 
-
     def start_reading(self, net_manager, start_chapter=0):
         """Called when a book is successfully requested from the server."""
         self.reading_mode = "server"
@@ -594,7 +598,7 @@ class ReadPage(tk.Frame):
             if self.current_page_index < self.total_chapters - 1:
                 self.current_page_index += 1
                 self.net_manager.notify_user_advanced(self.current_page_index)
-                self._save_current_progress() # <--- update server
+                self._save_current_progress()  # <--- update server
                 self._try_display_current()
         elif self.reading_mode == "local":
             if self.current_page_index < len(self.pages) - 1:
@@ -607,10 +611,11 @@ class ReadPage(tk.Frame):
             self.current_page_index -= 1
             if self.reading_mode == "server":
                 self.net_manager.notify_user_advanced(self.current_page_index)
-                self._save_current_progress() # <--- update server
+                self._save_current_progress()  # <--- update server
                 self._try_display_current()
             elif self.reading_mode == "local":
                 self.update_page()
+
     # --- HELPER: Update the Title Tag Style ---
     def update_title_style(self):
         """
@@ -736,7 +741,6 @@ class ReadPage(tk.Frame):
         self.text_area.config(state="disabled")
         self.page_label.config(text=f"Page {self.current_page_index + 1} of {len(self.pages)}")
         self.text_area.yview_moveto(0)
-
 
 
 if __name__ == "__main__":
