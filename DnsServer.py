@@ -43,7 +43,16 @@ def get_min_ttl(resp_bytes: bytes) -> int:
     if not reply.rr:
         return 0
     return min(rr.ttl for rr in reply.rr)
-
+def get_my_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(('8.8.8.8', 1))
+        ip = s.getsockname()[0]
+    except Exception:
+        ip = '127.0.0.1'
+    finally:
+        s.close()
+    return ip
 def startdns():
     global pIndex
     cache= {}
@@ -68,7 +77,7 @@ def startdns():
         qclass = req.q.qclass
 
         if qname == "books.server" and qtype == QTYPE.A:
-            local_ip = DHCP.get_my_ip()
+            local_ip = get_my_ip()
             print(f"{pIndex}: Local resolve for {qname} -> {local_ip}")
             pIndex += 1
             reply = req.reply()
@@ -113,5 +122,4 @@ def startdns():
                 pIndex += 1
 
 if __name__ == "__main__":
-    print(1)
     startdns()
