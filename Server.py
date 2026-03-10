@@ -289,7 +289,7 @@ def get_cover_base64(book: Book.Book) -> str:
 
 
 def epub_handler(bookname: str) -> list[str] | None:
-    """A method to parse an EPUB file and return a list of chapter texts. Uses a cache to avoid re-parsing."""
+    """A method to parse an EPUB file and return a list of chapter texts. Uses a cache to avoid reparsing."""
     if bookname in book_cache: # if the book has already been parsed, return the cached result
         return book_cache[bookname]
 
@@ -327,7 +327,7 @@ def handle_TCP_client(conn: socket.socket, addr):
     authenticated = False # flag to track whether the client has successfully logged in
 
     try:
-        while True: # main TCP client loop — keep processing messages until the client disconnects
+        while True: # the main TCP client loop — keep processing messages until the client disconnects
             raw = protocol.recv_message(conn) # receive the next length-prefixed message from the client
             if not raw: # if the message is empty, the client has disconnected
                 print(f"Client {addr} disconnected.") # debug print line
