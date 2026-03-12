@@ -8,6 +8,7 @@ import io
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
+import re
 
 import Client
 import Book
@@ -290,26 +291,35 @@ def get_cover_base64(book: Book.Book) -> str:
 
 def epub_handler(bookname: str) -> list[str] | None:
     """A method to parse an EPUB file and return a list of chapter texts. Uses a cache to avoid reparsing."""
-    if bookname in book_cache: # if the book has already been parsed, return the cached result
+    if bookname in book_cache:  # if the book has already been parsed, return the cached result
         return book_cache[bookname]
 
     try:
-        path = f"booksForServer/{bookname}.epub" # build the file path based on the book name
-        book = epub.read_epub(path) # parse the EPUB file using ebooklib
-        chapters = [] # list to store the extracted chapter texts
-        for item in book.get_items(): # iterate over all items in the EPUB
-            if item.get_type() == ebooklib.ITEM_DOCUMENT: # only process document items (chapters)
-                soup = BeautifulSoup(item.get_content(), 'html.parser') # parse the HTML content using BeautifulSoup
+        path = f"booksForServer/{bookname}.epub"  # build the file path based on the book name
+        book = epub.read_epub(path)  # parse the EPUB file using ebooklib
+        chapters = []  # list to store the extracted chapter texts
+        for item in book.get_items():  # iterate over all items in the EPUB
+            if item.get_type() == ebooklib.ITEM_DOCUMENT:  # only process document items (chapters)
+                soup = BeautifulSoup(item.get_content(), 'html.parser')  # parse the HTML content using BeautifulSoup
+
+                # unwrap inline tags (like spans for drop-caps) so text doesn't get split by the separator
+                for inline_tag in soup.find_all(['span', 'em', 'strong', 'i', 'b', 'a', 'sup', 'sub']):
+                    inline_tag.unwrap()
+
+                # join adjacent text nodes that were separated by tags to prevent "T \n\n he" issues
+                soup.smooth()
+
+                # extract plain text with double newlines between paragraphs
                 # noinspection PyArgumentList
-                text = soup.get_text(separator='\n\n', strip=True) # extract plain text with double newlines between paragraphs
-                if text: # only add non-empty chapters
+                text = soup.get_text(separator='\n\n', strip=True)
+
+                if text:  # only add non-empty chapters
                     chapters.append(text)
-        book_cache[bookname] = chapters # cache the parsed chapters for future requests
+        book_cache[bookname] = chapters  # cache the parsed chapters for future requests
         return chapters
     except Exception as e:
-        print(f"Error loading book '{bookname}': {e}") # debug print line
+        print(f"Error loading book '{bookname}': {e}")  # debug print line
         return None
-
 
 def validate_user(username: str, password: str) -> bool:
     """A method to validate a username and password against the AllClients list."""
