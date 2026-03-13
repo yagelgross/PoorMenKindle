@@ -7,9 +7,11 @@ import netifaces
 import DHCPIPPool
 
 
+
 def is_available(ip):
     """A method to check if an IP address is already in use by sending an ARP request"""
     arp_request = Ether(dst="ff:ff:ff:ff:ff:ff") / ARP(pdst=ip) # build the ARP request
+    print("Checking if IP is available: ", ip, "")
     reply = srp1(arp_request, timeout=0.1, verbose=0) # send and wait for a reply
     return reply is None # ensure no reply, which means the IP is available
 
