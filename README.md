@@ -98,11 +98,7 @@ While the current system is fully functional for educational and demonstration p
     *   *Current:* Credentials use a simple Caesar Cipher.
     *   *Future:* Implementation of **TLS/SSL** wrappers for all sockets and industry-standard hashing (e.g., bcrypt) for passwords.
 
-3.  **Enhanced RUDP Protocol:**
-    *   *Current:* Stop-and-Wait ARQ (Automatic Repeat Request).
-    *   *Future:* Implementation of **Sliding Window Protocol** and Congestion Control to improve throughput on high-latency networks.
-
-4.  **Modern UI/UX:**
+3.  **Modern UI/UX:**
     *   *Current:* `tkinter` based interface.
     *   *Future:* Porting the client to a modern web frontend (React/Vue) or a desktop framework like **PyQt/PySide** for a smoother reading experience.
 
