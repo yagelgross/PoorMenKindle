@@ -238,7 +238,7 @@ def process_udp_request(server_socket: socket.socket, addr: tuple, payload: str)
 def start_UDP_server():
     """Activates the RUDP server and starts listening for incoming connections."""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # open a UDP socket
-    PORT = 12349
+    PORT = 12347
     server_socket.bind(('', PORT)) # bind the socket to port 12347 or to 12349 for using the chaos proxy
     print(f"RUDP Server listening on port {PORT}...") # debug print line
 
