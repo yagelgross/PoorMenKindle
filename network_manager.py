@@ -175,7 +175,6 @@ class NetworkManager:
                     return True
 
             print(f"Request book attempt {attempt + 1} timed out. Retrying...") # debug print line
-
         return False
 
     def _rudp_listen_loop(self):

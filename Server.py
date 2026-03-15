@@ -4,12 +4,9 @@ import socket
 import threading
 from PIL import Image
 import io
-
 import ebooklib
 from ebooklib import epub
 from bs4 import BeautifulSoup
-import re
-
 import Client
 import Book
 import util
@@ -20,18 +17,25 @@ import time
 currClients: list[Client.Client] = [] # a list of all currently connected clients
 
 availableBooks = [
-    Book.Book("Eragon",      "Christopher Paolini", 50, "booksForServer/Eragon.epub",      "booksForServer/covers/Eragon.jpg"),
-    Book.Book("Eldest",      "Christopher Paolini", 83, "booksForServer/Eldest.epub",       "booksForServer/covers/Eldest.png"),
-    Book.Book("Brisingr",    "Christopher Paolini", 68, "booksForServer/Brisingr.epub",     "booksForServer/covers/Brisingr.png"),
-    Book.Book("Inheritance", "Christopher Paolini", 88, "booksForServer/Inheritance.epub",  "booksForServer/covers/Inheritance.jpg"),
-    Book.Book("אראגון", "כריסטופר פאוליני", 64, "booksForServer/אראגון.epub",      "booksForServer/covers/אראגון.jpeg"),
-] # a list of all the books available on the server. In a real application, this would likely be loaded from a database or filesystem scan rather than hardcoded.
+    Book.Book("Eragon",      "Christopher Paolini", 50,
+              "booksForServer/Eragon.epub",      "booksForServer/covers/Eragon.jpg"),
+    Book.Book("Eldest",      "Christopher Paolini", 83,
+              "booksForServer/Eldest.epub",       "booksForServer/covers/Eldest.png"),
+    Book.Book("Brisingr",    "Christopher Paolini", 68,
+              "booksForServer/Brisingr.epub",     "booksForServer/covers/Brisingr.png"),
+    Book.Book("Inheritance", "Christopher Paolini", 88,
+              "booksForServer/Inheritance.epub",  "booksForServer/covers/Inheritance.jpg"),
+    Book.Book("אראגון", "כריסטופר פאוליני", 64,
+              "booksForServer/אראגון.epub",      "booksForServer/covers/אראגון.jpeg"),
+] # a list of all the books available on the server. In the real application,
+  #this would be loaded from a database or filesystem scan rather than hardcoded.
 
 AllClients = [
     Client.Client("yagel", "123456", True),
     Client.Client("noam", "123456", True),
     Client.Client("taltul", "123456", False),
-] # a list of all the clients authorized to connect to the server. In a real application, this would likely be loaded from a database or filesystem scan rather than hardcoded.
+] # a list of all the clients authorized to connect to the server. In the real application,
+  # this would be loaded from a database or filesystem scan rather than hardcoded.
 
 # Cache parsed books so we don't reparse the EPUB on every request
 book_cache: dict[str, list[str]] = {}
@@ -234,7 +238,7 @@ def process_udp_request(server_socket: socket.socket, addr: tuple, payload: str)
 def start_UDP_server():
     """Activates the RUDP server and starts listening for incoming connections."""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) # open a UDP socket
-    PORT = 12347
+    PORT = 12349
     server_socket.bind(('', PORT)) # bind the socket to port 12347 or to 12349 for using the chaos proxy
     print(f"RUDP Server listening on port {PORT}...") # debug print line
 
@@ -383,7 +387,8 @@ def handle_TCP_client(conn: socket.socket, addr):
                 print(f"Sent book list ({len(availableBooks)} books) to {addr}") # debug print line
 
             # ─── REQUEST BOOK ───
-            elif msg_type == protocol.MSG_REQUEST_BOOK and len(parts) == 2 and authenticated: # if the client is requesting a specific book
+            elif msg_type == protocol.MSG_REQUEST_BOOK and len(parts) == 2 and authenticated: # if the client is requesting
+                # a specific book
                 book_title = parts[1] # extract the book title from the request
                 chapters = epub_handler(book_title) # parse the EPUB file and get the list of chapter texts
 
@@ -392,7 +397,8 @@ def handle_TCP_client(conn: socket.socket, addr):
                     continue # skip to the next message
 
                 # Send metadata: total number of chapters
-                meta = f"{protocol.MSG_BOOK_META}{protocol.SEPARATOR}{book_title}{protocol.SEPARATOR}{len(chapters)}" # build the metadata message
+                meta = f"{protocol.MSG_BOOK_META}{protocol.SEPARATOR}{book_title}{protocol.SEPARATOR}{len(chapters)}"
+                # build the metadata message
                 protocol.send_message(conn, meta) # send the metadata to the client
 
                 # Chapter-streaming loop — send chapters one at a time as the client requests them
@@ -437,7 +443,8 @@ def handle_TCP_client(conn: socket.socket, addr):
                 print(f"Ended streaming '{book_title}' to {addr}") # debug print line
 
             # ─── SAVE PROGRESS ───
-            elif msg_type == protocol.MSG_SAVE_PROGRESS and len(parts) == 3 and authenticated: # if the client is saving reading progress (outside of streaming)
+            elif msg_type == protocol.MSG_SAVE_PROGRESS and len(parts) == 3 and authenticated:
+                # if the client is saving reading progress (outside of streaming)
                 book_title = parts[1] # extract the book title
                 chapter = int(parts[2]) # extract the chapter index
                 client = current_client_map.get(addr) # get the Client object for this address
@@ -446,7 +453,8 @@ def handle_TCP_client(conn: socket.socket, addr):
                     print(f"Saved progress: {client.getUserName()} → {book_title} ch.{chapter}") # debug print line
 
             # ─── GET PROGRESS ───
-            elif msg_type == protocol.MSG_GET_PROGRESS and len(parts) == 2 and authenticated: # if the client is requesting their saved progress
+            elif msg_type == protocol.MSG_GET_PROGRESS and len(parts) == 2 and authenticated:
+                # if the client is requesting their saved progress
                 book_title = parts[1] # extract the book title
                 client = current_client_map.get(addr) # get the Client object for this address
                 chapter = -1 # default to -1 (no progress saved)
@@ -458,14 +466,16 @@ def handle_TCP_client(conn: socket.socket, addr):
                 )
 
             # ─── GET LAST BOOK ───
-            elif msg_type == protocol.MSG_GET_LAST_BOOK and authenticated: # if the client is requesting the last book they were reading
+            elif msg_type == protocol.MSG_GET_LAST_BOOK and authenticated:
+                # if the client is requesting the last book they were reading
                 client = current_client_map.get(addr) # get the Client object for this address
                 if client and client.lastBookRead: # if the client was found and has a last book
                     title = client.lastBookRead # get the title of the last book
                     chapter = client.getCurrChapter(title) # get the chapter index of the last book
                     protocol.send_message(
                         conn,
-                        f"{protocol.MSG_LAST_BOOK}{protocol.SEPARATOR}{title}{protocol.SEPARATOR}{chapter}" # send the last book info to the client
+                        f"{protocol.MSG_LAST_BOOK}{protocol.SEPARATOR}{title}{protocol.SEPARATOR}{chapter}"
+                        # send the last book info to the client
                     )
                 else: # if the client has no last book
                     protocol.send_message(

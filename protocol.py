@@ -13,28 +13,31 @@ This are all the message types that can be sent between the client and the serve
 it covers the basic metadata of the book, the login, errors, mid-reading flags,
 and the necessary data for the packet headers.
 """
+# Client side messages
 MSG_LOGIN = "LOGIN"
 MSG_REQUEST_BOOK = "REQUEST_BOOK"
 MSG_NEXT_CHAPTER = "NEXT_CHAPTER"
 MSG_PREV_CHAPTER = "PREV_CHAPTER"
+
+# Server side messages
 MSG_BOOK_META = "BOOK_META"
 MSG_CHAPTER = "CHAPTER"
 MSG_END_OF_BOOK = "END_OF_BOOK"
 MSG_ERROR = "ERROR"
 
 # Book list
-MSG_REQUEST_BOOK_LIST = "REQUEST_BOOK_LIST"
-MSG_BOOK_LIST = "BOOK_LIST"
-MSG_BOOK_LIST_ITEM = "BOOK_LIST_ITEM"
+MSG_REQUEST_BOOK_LIST = "REQUEST_BOOK_LIST" # Client side
+MSG_BOOK_LIST = "BOOK_LIST" # Server side
+MSG_BOOK_LIST_ITEM = "BOOK_LIST_ITEM" # Server side
 
 # Reading progress
-MSG_SAVE_PROGRESS = "SAVE_PROGRESS"
-MSG_GET_PROGRESS = "GET_PROGRESS"
-MSG_PROGRESS = "PROGRESS"
-MSG_STOP_READING = "STOP_READING"
+MSG_SAVE_PROGRESS = "SAVE_PROGRESS" # Client side
+MSG_GET_PROGRESS = "GET_PROGRESS" # Client side
+MSG_PROGRESS = "PROGRESS" # Server side
+MSG_STOP_READING = "STOP_READING" # Client side
 
-MSG_GET_LAST_BOOK = "GET_LAST_BOOK"
-MSG_LAST_BOOK = "LAST_BOOK"
+MSG_GET_LAST_BOOK = "GET_LAST_BOOK" # Client side
+MSG_LAST_BOOK = "LAST_BOOK" # Server side
 
 # TCP headers
 SEPARATOR = "|"
