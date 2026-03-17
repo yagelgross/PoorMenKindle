@@ -271,7 +271,7 @@ class NetworkManager:
                     with self._lock:
                         self.chapter_buffer[chapter_idx] = chapter_text # store the chapter in the buffer
                         self.next_server_index = chapter_idx + 1 # update the next server index
-                        print(f"  [Prefetch] Buffered chapter {chapter_idx} " 
+                        print(f"  [Prefetch] Buffered chapter {chapter_idx + 1} " 
                               f"(buffer: {self.next_server_index - self.current_read_index} ahead)") # debug print line
                     # Notify UI that a chapter is ready
                     self._chapter_ready.set()
