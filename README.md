@@ -2,6 +2,8 @@
 
 BookWormHole is a vertically integrated network system built entirely in Python. Unlike standard applications that rely on the operating system's network stack, this project implements its own core customized services—including DHCP, DNS, and a Reliable UDP (RUDP) protocol—to power a fully functional digital e-book library.
 
+This was a finalized project for my Networks class, therefore it is using raw protocols for transfer of data.
+
 ## 📖 Table of Contents
 - [Project Overview](#project-overview)
 - [Key Functionality](#key-functionality)
